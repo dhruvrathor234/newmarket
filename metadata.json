@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Nebulamarket AI Trading",
+  "description": "Autonomous AI trading agent focused on Gold bitcoin forex crypto (XAUUSD). It fetches live news sources across the web using Gemini, analyzes sentiment regarding inflation and geopolitics, and executes automated news trades.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

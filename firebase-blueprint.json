@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "Trade": {
+      "title": "Trade",
+      "description": "Represents a completed trade for tracking profit and fees.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the user who made the trade." },
+        "symbol": { "type": "string", "description": "The trading pair (e.g., BTCUSDT)." },
+        "type": { "type": "string", "enum": ["BUY", "SELL"], "description": "The trade direction." },
+        "entryPrice": { "type": "number", "description": "The price at which the trade was opened." },
+        "exitPrice": { "type": "number", "description": "The price at which the trade was closed." },
+        "quantity": { "type": "number", "description": "The amount of asset traded." },
+        "profit": { "type": "number", "description": "The realized profit or loss from the trade." },
+        "fees": { "type": "number", "description": "The total fees paid for the trade." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "When the trade was closed." },
+        "status": { "type": "string", "enum": ["OPEN", "CLOSED"], "description": "Current status of the trade." }
+      },
+      "required": ["userId", "symbol", "type", "profit", "fees", "timestamp"]
+    },
+    "UserStats": {
+      "title": "UserStats",
+      "description": "Aggregate trading stats and fee information for a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The UID of the user." },
+        "totalProfit": { "type": "number", "description": "Cumulative net profit across all trades." },
+        "totalFeesOwed": { "type": "number", "description": "The 20% cut Nebula is owed from the total profit." },
+        "totalFeesPaid": { "type": "number", "description": "Total fees the user has already paid to Nebula." },
+        "amountOwed": { "type": "number", "description": "The current outstanding balance (totalFeesOwed - totalFeesPaid)." },
+        "isLocked": { "type": "boolean", "description": "Whether the user's account is soft-locked due to unpaid fees." },
+        "lastUpdated": { "type": "string", "format": "date-time", "description": "Last time stats were calculated." }
+      },
+      "required": ["userId", "totalProfit", "totalFeesOwed", "totalFeesPaid", "amountOwed", "isLocked"]
+    }
+  },
+  "firestore": {
+    "trades": {
+      "schema": "Trade",
+      "description": "Collection of all trades made through Nebula."
+    },
+    "user_stats": {
+      "schema": "UserStats",
+      "description": "Collection of aggregate stats for each user."
+    }
+  }
+}
