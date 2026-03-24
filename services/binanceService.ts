@@ -13,23 +13,25 @@ export const binanceService = {
     const balances = await response.json();
     console.log("[Binance Service] Raw Balances:", balances);
     
-    // We'll look for USDT, USDC, or BUSD as common stablecoins
-    const usdtBalance = balances.find((b: any) => b.asset === 'USDT');
-    const usdcBalance = balances.find((b: any) => b.asset === 'USDC');
-    const busdBalance = balances.find((b: any) => b.asset === 'BUSD');
+    // Check if we have the total estimate from the server
+    const totalEstimate = balances.find((b: any) => b.asset === 'TOTAL_ESTIMATE_USDT');
+    if (totalEstimate) {
+      const total = parseFloat(totalEstimate.free);
+      console.log(`[Binance Service] Using Total Estimate: ${total.toFixed(4)}`);
+      return total;
+    }
+
+    // Fallback to manual calculation if estimate is missing (e.g. Futures or older server)
+    const stablecoins = ['USDT', 'USDC', 'BUSD', 'FDUSD', 'TUSD', 'DAI'];
     
     let total = 0;
-    if (usdtBalance) {
-      total += (parseFloat(usdtBalance.free) || 0) + (parseFloat(usdtBalance.locked) || 0);
-    }
-    if (usdcBalance) {
-      total += (parseFloat(usdcBalance.free) || 0) + (parseFloat(usdcBalance.locked) || 0);
-    }
-    if (busdBalance) {
-      total += (parseFloat(busdBalance.free) || 0) + (parseFloat(busdBalance.locked) || 0);
-    }
+    balances.forEach((b: any) => {
+      if (stablecoins.includes(b.asset)) {
+        total += (parseFloat(b.free) || 0) + (parseFloat(b.locked) || 0);
+      }
+    });
     
-    console.log(`[Binance Service] Calculated Balance: ${total.toFixed(4)} (USDT: ${usdtBalance?.free || 0}, USDC: ${usdcBalance?.free || 0}, BUSD: ${busdBalance?.free || 0})`);
+    console.log(`[Binance Service] Calculated Balance: ${total.toFixed(4)}`);
     
     return total;
   },
