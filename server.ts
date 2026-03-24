@@ -54,12 +54,12 @@ if (GEMINI_API_KEY && !isPlaceholder(GEMINI_API_KEY)) {
   if (process.env.API_KEY) console.warn(`[Neural Core] API_KEY exists but might be a placeholder: ${process.env.API_KEY.substring(0, 4)}...`);
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+export const app = express();
+const PORT = 3000;
 
-  app.use(express.json());
+app.use(express.json());
 
+async function setupApp() {
   // --- HEALTH CHECK ---
   app.get("/api/health", (req, res) => {
     res.json({
@@ -467,7 +467,7 @@ async function startServer() {
 
   // --- VITE MIDDLEWARE ---
 
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -481,9 +481,17 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  return app;
+}
+
+const appPromise = setupApp();
+
+if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  appPromise.then(serverApp => {
+    serverApp.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
   });
 }
 
-startServer();
+export default app;

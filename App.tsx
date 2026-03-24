@@ -901,35 +901,36 @@ const App: React.FC = () => {
     try {
       addLog("Connecting to Binance...", "info");
       
-      const updatedState = { 
-        ...botState, 
-        binanceApiKey: apiKey, 
-        binanceApiSecret: apiSecret, 
-        isBinanceConnected: true 
-      };
-      
-      setBotState(updatedState);
-      
-      // Fetch balance immediately
+      // Fetch balance first to verify keys
       try {
         const balance = await binanceService.getBalance(apiKey, apiSecret, botState.tradingMode);
-        setBotState(prev => ({
-          ...prev,
+        
+        const updatedState = { 
+          ...botState, 
+          binanceApiKey: apiKey, 
+          binanceApiSecret: apiSecret, 
+          isBinanceConnected: true,
           realBalance: balance,
-          balance: prev.accountType === AccountType.REAL ? balance : prev.balance,
+          balance: botState.accountType === AccountType.REAL ? balance : botState.paperBalance,
           realEquity: balance
-        }));
-      } catch (e) {
+        };
+        
+        setBotState(updatedState);
+        
+        if (user && auth.currentUser) {
+          await databaseService.saveBotState(auth.currentUser.uid, updatedState);
+        }
+        
+        addLog(`Binance Real Account Connected! Balance: ${balance} USD`, "success");
+      } catch (e: any) {
         console.error("Initial balance fetch failed:", e);
+        addLog(`Failed to connect Binance: ${e.message || "Invalid API keys or network error"}`, "error");
+        
+        // Ensure we don't show as connected if it failed
+        setBotState(prev => ({ ...prev, isBinanceConnected: false }));
       }
-      
-      if (user && auth.currentUser) {
-        await databaseService.saveBotState(auth.currentUser.uid, updatedState);
-      }
-      
-      addLog("Binance Real Account Connected Successfully!", "success");
     } catch (error) {
-      addLog("Failed to connect Binance. Check your keys.", "error");
+      addLog("An unexpected error occurred during connection.", "error");
     }
   };
 

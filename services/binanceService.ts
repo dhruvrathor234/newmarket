@@ -11,10 +11,12 @@ export const binanceService = {
       throw new Error(error.error || "Failed to fetch balance");
     }
     const balances = await response.json();
+    console.log("[Binance Service] Raw Balances:", balances);
     
-    // We'll look for USDT or USDC as common stablecoins
+    // We'll look for USDT, USDC, or BUSD as common stablecoins
     const usdtBalance = balances.find((b: any) => b.asset === 'USDT');
     const usdcBalance = balances.find((b: any) => b.asset === 'USDC');
+    const busdBalance = balances.find((b: any) => b.asset === 'BUSD');
     
     let total = 0;
     if (usdtBalance) {
@@ -23,8 +25,11 @@ export const binanceService = {
     if (usdcBalance) {
       total += (parseFloat(usdcBalance.free) || 0) + (parseFloat(usdcBalance.locked) || 0);
     }
+    if (busdBalance) {
+      total += (parseFloat(busdBalance.free) || 0) + (parseFloat(busdBalance.locked) || 0);
+    }
     
-    console.log(`[Binance Service] Calculated Balance: ${total} (USDT: ${usdtBalance?.free || 0}, USDC: ${usdcBalance?.free || 0})`);
+    console.log(`[Binance Service] Calculated Balance: ${total.toFixed(4)} (USDT: ${usdtBalance?.free || 0}, USDC: ${usdcBalance?.free || 0}, BUSD: ${busdBalance?.free || 0})`);
     
     return total;
   },
