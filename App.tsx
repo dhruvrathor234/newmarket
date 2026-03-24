@@ -854,6 +854,20 @@ const App: React.FC = () => {
         equity: nextEquity
       };
     });
+    
+    // Trigger immediate balance fetch if switching to REAL
+    if (type === AccountType.REAL && botState.isBinanceConnected && botState.binanceApiKey && botState.binanceApiSecret) {
+      binanceService.getBalance(botState.binanceApiKey, botState.binanceApiSecret, botState.tradingMode)
+        .then(balance => {
+          setBotState(prev => ({
+            ...prev,
+            realBalance: balance,
+            balance: prev.accountType === AccountType.REAL ? balance : prev.balance
+          }));
+        })
+        .catch(err => console.error("Immediate balance fetch failed:", err));
+    }
+    
     addLog(`Account switched to: ${type}`, 'info');
   };
 
@@ -866,6 +880,19 @@ const App: React.FC = () => {
     if (botState.accountType === AccountType.REAL) {
       if (asset.CATEGORY !== 'CRYPTO' || (asset.MODES && !asset.MODES.includes(mode))) {
         setActiveSymbol('BTCUSD');
+      }
+      
+      // Trigger immediate balance fetch if in REAL mode
+      if (botState.isBinanceConnected && botState.binanceApiKey && botState.binanceApiSecret) {
+        binanceService.getBalance(botState.binanceApiKey, botState.binanceApiSecret, mode)
+          .then(balance => {
+            setBotState(prev => ({
+              ...prev,
+              realBalance: balance,
+              balance: prev.accountType === AccountType.REAL ? balance : prev.balance
+            }));
+          })
+          .catch(err => console.error("Immediate balance fetch failed (mode switch):", err));
       }
     }
   };

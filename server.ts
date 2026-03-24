@@ -77,28 +77,63 @@ async function startServer() {
 
   app.post("/api/binance/balance", async (req, res) => {
     const { apiKey, apiSecret, tradingMode } = req.body;
-    if (!apiKey || !apiSecret) {
+    
+    const trimmedKey = apiKey?.toString().trim();
+    const trimmedSecret = apiSecret?.toString().trim();
+
+    if (!trimmedKey || !trimmedSecret) {
       return res.status(400).json({ error: "Missing API credentials" });
     }
 
     try {
-      const client = Binance({ apiKey, apiSecret });
+      const client = Binance({ 
+        apiKey: trimmedKey, 
+        apiSecret: trimmedSecret, 
+        useServerTime: true,
+        recvWindow: 60000 // Increase receive window for laggy connections
+      });
+
       if (tradingMode === 'FUTURES') {
+        console.log("[Binance] Fetching Futures Balance for key:", trimmedKey.substring(0, 6) + "...");
         const accountInfo = await client.futuresAccountInfo();
+        
+        if (!accountInfo || !accountInfo.assets) {
+          console.error("[Binance] Invalid Futures account info response:", accountInfo);
+          return res.status(500).json({ error: "Invalid response from Binance Futures API" });
+        }
+
         // Map futures assets to common balance format
         const balances = accountInfo.assets.map((a: any) => ({
           asset: a.asset,
           free: a.availableBalance,
           locked: (parseFloat(a.walletBalance) - parseFloat(a.availableBalance)).toString()
         }));
+        
+        const usdt = balances.find((b: any) => b.asset === 'USDT');
+        console.log(`[Binance] Futures USDT Balance: ${usdt ? usdt.free : 'Not found'}`);
+        
         res.json(balances);
       } else {
+        console.log("[Binance] Fetching Spot Balance for key:", trimmedKey.substring(0, 6) + "...");
         const accountInfo = await client.accountInfo();
+        
+        if (!accountInfo || !accountInfo.balances) {
+          console.error("[Binance] Invalid Spot account info response:", accountInfo);
+          return res.status(500).json({ error: "Invalid response from Binance Spot API" });
+        }
+
+        const usdt = accountInfo.balances.find((b: any) => b.asset === 'USDT');
+        console.log(`[Binance] Spot USDT Balance: ${usdt ? usdt.free : 'Not found'}`);
+        
         res.json(accountInfo.balances);
       }
     } catch (error: any) {
       console.error("Binance balance error:", error);
-      res.status(500).json({ error: error.message || "Failed to fetch Binance balance" });
+      res.status(500).json({ 
+        error: error.message || "Failed to fetch Binance balance",
+        code: error.code,
+        details: error.toString()
+      });
     }
   });
 
@@ -109,8 +144,9 @@ async function startServer() {
     }
 
     try {
-      const client = Binance({ apiKey, apiSecret });
+      const client = Binance({ apiKey, apiSecret, useServerTime: true });
       if (tradingMode === 'FUTURES') {
+        console.log(`[Binance] Placing Futures ${side} Order for ${symbol}...`);
         // Set leverage if provided
         if (leverage) {
           try {

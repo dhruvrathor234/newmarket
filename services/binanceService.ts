@@ -11,10 +11,22 @@ export const binanceService = {
       throw new Error(error.error || "Failed to fetch balance");
     }
     const balances = await response.json();
-    // For simplicity, we'll sum up the USDT balance. 
-    // In a more advanced version, we'd convert all assets to USDT using current prices.
+    
+    // We'll look for USDT or USDC as common stablecoins
     const usdtBalance = balances.find((b: any) => b.asset === 'USDT');
-    return usdtBalance ? parseFloat(usdtBalance.free) + parseFloat(usdtBalance.locked) : 0;
+    const usdcBalance = balances.find((b: any) => b.asset === 'USDC');
+    
+    let total = 0;
+    if (usdtBalance) {
+      total += (parseFloat(usdtBalance.free) || 0) + (parseFloat(usdtBalance.locked) || 0);
+    }
+    if (usdcBalance) {
+      total += (parseFloat(usdcBalance.free) || 0) + (parseFloat(usdcBalance.locked) || 0);
+    }
+    
+    console.log(`[Binance Service] Calculated Balance: ${total} (USDT: ${usdtBalance?.free || 0}, USDC: ${usdcBalance?.free || 0})`);
+    
+    return total;
   },
 
   async placeOrder(apiKey: string, apiSecret: string, symbol: string, side: 'BUY' | 'SELL', quantity: string, tradingMode: string, type: 'MARKET' | 'LIMIT' = 'MARKET', price?: string, leverage?: number) {

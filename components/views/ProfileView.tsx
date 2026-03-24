@@ -21,8 +21,8 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userEmail, botState, userStat
   });
 
   const [binanceKeys, setBinanceKeys] = useState({
-    apiKey: botState.apiKey || '',
-    apiSecret: botState.apiSecret || '',
+    apiKey: botState.binanceApiKey || '',
+    apiSecret: botState.binanceApiSecret || '',
   });
   
   const [kycFiles, setKycFiles] = useState<{ front: string | null; back: string | null }>({
