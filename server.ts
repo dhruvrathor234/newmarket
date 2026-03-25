@@ -5,6 +5,10 @@ import { createServer as createViteServer } from "vite";
 import BinanceFactory from 'binance-api-node';
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from 'dotenv';
+import Razorpay from 'razorpay';
+import crypto from 'crypto';
+import admin from 'firebase-admin';
+import firebaseConfig from './firebase-applet-config.json';
 
 dotenv.config({ override: true });
 
@@ -30,6 +34,20 @@ const getGeminiKey = () => {
 };
 
 const GEMINI_API_KEY = getGeminiKey();
+
+// --- FIREBASE ADMIN SETUP ---
+if (!admin.apps.length) {
+  admin.initializeApp({
+    projectId: firebaseConfig.projectId,
+  });
+}
+const dbAdmin = admin.firestore();
+
+// --- RAZORPAY SETUP ---
+const razorpay = new Razorpay({
+  key_id: process.env.RAZORPAY_KEY_ID || 'rzp_live_SVUMHcTC82q1XW',
+  key_secret: process.env.RAZORPAY_KEY_SECRET || '2fA8XWIMqjkKM8T7pJjzQUXx'
+});
 
 // --- IN-MEMORY CACHE ---
 const cache = {
@@ -130,7 +148,7 @@ app.post("/api/binance/balance", async (req, res) => {
       console.log("[Binance] Fetching Spot Balance...");
       const [accountInfo, allPrices] = await Promise.all([
         client.accountInfo(),
-        client.allPrices()
+        client.prices()
       ]);
 
       if (!accountInfo || !accountInfo.balances) {
@@ -254,6 +272,13 @@ app.post("/api/ai/economic-events", async (req, res) => {
     cache.economicEvents.timestamp = now;
     res.json(events);
   } catch (error: any) {
+    console.error("[Neural Core] Economic Events Error:", error);
+    if (error.message?.includes("leaked")) {
+      return res.status(403).json({ 
+        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
+        details: error.message
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -276,6 +301,13 @@ app.post("/api/ai/analyze-market", async (req, res) => {
       .map((c: any) => ({ title: c.web.title, url: c.web.uri }));
     res.json({ ...data, sources });
   } catch (error: any) {
+    console.error("[Neural Core] Market Analysis Error:", error);
+    if (error.message?.includes("leaked")) {
+      return res.status(403).json({ 
+        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
+        details: error.message
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -292,6 +324,13 @@ app.post("/api/ai/evaluate-logic", async (req, res) => {
     });
     res.json(JSON.parse(response.text || "{}"));
   } catch (error: any) {
+    console.error("[Neural Core] Logic Evaluation Error:", error);
+    if (error.message?.includes("leaked")) {
+      return res.status(403).json({ 
+        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
+        details: error.message
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -311,6 +350,13 @@ app.post("/api/ai/chat", async (req, res) => {
     });
     res.json({ text: response.text || "No response." });
   } catch (error: any) {
+    console.error("[Neural Core] Chat Error:", error);
+    if (error.message?.includes("leaked")) {
+      return res.status(403).json({ 
+        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
+        details: error.message
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -333,6 +379,13 @@ app.post("/api/ai/verify-identity", async (req, res) => {
     });
     res.json(JSON.parse(response.text || "{}"));
   } catch (error: any) {
+    console.error("[Neural Core] Identity Verification Error:", error);
+    if (error.message?.includes("leaked")) {
+      return res.status(403).json({ 
+        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
+        details: error.message
+      });
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -348,6 +401,131 @@ app.post("/api/ai/backtest-data", async (req, res) => {
     });
     res.json(JSON.parse(response.text || "[]"));
   } catch (error: any) {
+    console.error("[Neural Core] Backtest Data Error:", error);
+    if (error.message?.includes("leaked")) {
+      return res.status(403).json({ 
+        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
+        details: error.message
+      });
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// --- RAZORPAY ENDPOINTS ---
+
+app.post("/api/razorpay/create-order", async (req, res) => {
+  try {
+    const options = {
+      amount: 100, // ₹1 in paise
+      currency: "INR",
+      receipt: "order_rcptid_" + Date.now()
+    };
+
+    const order = await razorpay.orders.create(options);
+    res.json(order);
+  } catch (error: any) {
+    console.error("Razorpay order error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/razorpay/verify-payment", async (req, res) => {
+  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ error: "Missing userId" });
+  }
+
+  const body = razorpay_order_id + "|" + razorpay_payment_id;
+
+  const expectedSignature = crypto
+    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || '2fA8XWIMqjkKM8T7pJjzQUXx')
+    .update(body)
+    .digest("hex");
+
+  if (expectedSignature === razorpay_signature) {
+    try {
+      // Update Firebase user stats
+      const userStatsRef = dbAdmin.collection('user_stats').doc(userId);
+      const userStatsDoc = await userStatsRef.get();
+
+      const now = new Date();
+      const expiry = new Date();
+      expiry.setDate(now.getDate() + 30);
+
+      if (userStatsDoc.exists) {
+        await userStatsRef.update({
+          subscriptionActive: true,
+          subscriptionExpiry: expiry.toISOString(),
+          lastUpdated: now.toISOString()
+        });
+      } else {
+        // Should not happen if trial was set up on signup, but handle just in case
+        await userStatsRef.set({
+          userId,
+          totalProfit: 0,
+          totalFeesOwed: 0,
+          totalFeesPaid: 0,
+          amountOwed: 0,
+          isLocked: false,
+          subscriptionActive: true,
+          subscriptionExpiry: expiry.toISOString(),
+          trialStart: now.toISOString(),
+          trialEnd: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+          lastUpdated: now.toISOString()
+        });
+      }
+
+      res.json({ status: "success" });
+    } catch (error: any) {
+      console.error("Firebase update error:", error);
+      res.status(500).json({ error: "Payment verified but failed to update subscription status" });
+    }
+  } else {
+    res.status(400).json({ status: "failed" });
+  }
+});
+
+app.post("/api/subscription/start-trial", async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: "Missing userId" });
+
+  try {
+    const userStatsRef = dbAdmin.collection('user_stats').doc(userId);
+    const userStatsDoc = await userStatsRef.get();
+
+    const now = new Date();
+    const trialEnd = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+    if (userStatsDoc.exists) {
+      const data = userStatsDoc.data();
+      // Only allow starting trial if it hasn't been started before (trialStart is in the past or null)
+      // Or if the user explicitly wants to start it now.
+      // The user said "as soon as they click free trial".
+      
+      await userStatsRef.update({
+        trialStart: now.toISOString(),
+        trialEnd: trialEnd.toISOString(),
+        lastUpdated: now.toISOString()
+      });
+    } else {
+      await userStatsRef.set({
+        userId,
+        totalProfit: 0,
+        totalFeesOwed: 0,
+        totalFeesPaid: 0,
+        amountOwed: 0,
+        isLocked: false,
+        subscriptionActive: false,
+        trialStart: now.toISOString(),
+        trialEnd: trialEnd.toISOString(),
+        lastUpdated: now.toISOString()
+      });
+    }
+    res.json({ status: "success", trialEnd: trialEnd.toISOString() });
+  } catch (error: any) {
+    console.error("Trial start error:", error);
     res.status(500).json({ error: error.message });
   }
 });

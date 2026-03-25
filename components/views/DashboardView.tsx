@@ -77,13 +77,18 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
   });
 
   const renderAnimatedText = (text: string, baseClass: string) => {
-    return text.split("").map((char, i) => (
-      <span 
-        key={i} 
-        className={`inline-block transition-all duration-300 cursor-default hover:-translate-y-2 hover:scale-110 ${baseClass} ${char === " " ? "w-[0.25em]" : ""} hover:text-blue-400 hover:[text-shadow:0_0_20px_rgba(59,130,246,0.8)]`}
-        style={{ transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)' }}
-      >
-        {char === " " ? "\u00A0" : char}
+    return text.split(" ").map((word, wordIndex) => (
+      <span key={wordIndex} className="inline-block whitespace-nowrap">
+        {word.split("").map((char, charIndex) => (
+          <span 
+            key={charIndex} 
+            className={`inline-block transition-all duration-300 cursor-default hover:-translate-y-2 hover:scale-110 ${baseClass} hover:text-blue-400 hover:[text-shadow:0_0_20px_rgba(59,130,246,0.8)]`}
+            style={{ transitionTimingFunction: 'cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+          >
+            {char}
+          </span>
+        ))}
+        {wordIndex < text.split(" ").length - 1 && <span className="inline-block w-[0.25em]">&nbsp;</span>}
       </span>
     ));
   };
@@ -111,13 +116,13 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
               </div>
               
               <div className="overflow-visible">
-                <h1 className="text-[clamp(2.5rem,8vw,100px)] font-black tracking-tighter leading-none text-white animate-fade-in flex flex-wrap">
+                <h1 className="text-[clamp(2.5rem,8vw,100px)] font-black tracking-tighter leading-none text-white animate-fade-in flex flex-nowrap whitespace-nowrap">
                   {renderAnimatedText("Nebulamarket", "hero-gradient-text")}
                 </h1>
               </div>
 
               <div className="overflow-visible">
-                <p className="text-[clamp(0.75rem,1.8vw,1.5rem)] font-light text-zinc-400 tracking-tight leading-none animate-fade-in flex flex-wrap" style={{animationDelay: '100ms'}}>
+                <p className="text-[clamp(0.75rem,1.8vw,1.5rem)] font-light text-zinc-400 tracking-tight leading-none animate-fade-in" style={{animationDelay: '100ms'}}>
                   {renderAnimatedText("The future of automated wealth management. Execute smart strategies with built-in AI precision.", "")}
                 </p>
               </div>
@@ -156,7 +161,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
         {/* FEATURES GRID */}
         <section className="reveal space-y-12 sm:space-y-20">
           <div className="text-center space-y-4">
-            <h3 className="text-3xl sm:text-4xl font-black text-white tracking-tight uppercase flex flex-wrap justify-center">
+            <h3 className="text-3xl sm:text-4xl font-black text-white tracking-tight uppercase justify-center">
               {renderAnimatedText("Powerful Trading Tools", "")}
             </h3>
             <p className="text-zinc-500 max-w-2xl mx-auto px-4">
@@ -257,7 +262,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
         <section className="reveal glass-card rounded-[32px] sm:rounded-[40px] overflow-hidden p-8 sm:p-16 lg:p-28 relative text-center border-blue-500/10 hover:border-blue-500/40 transition-all duration-1000 group/cta">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.1)_0%,_transparent_60%)]"></div>
             <div className="max-w-3xl mx-auto space-y-8 sm:space-y-10 relative z-10">
-               <h3 className="text-3xl sm:text-5xl lg:text-7xl font-black text-white tracking-tighter leading-tight uppercase group-hover/cta:scale-[1.02] transition-transform duration-1000 flex flex-wrap justify-center">
+               <h3 className="text-3xl sm:text-5xl lg:text-7xl font-black text-white tracking-tighter leading-tight uppercase group-hover/cta:scale-[1.02] transition-transform duration-1000 justify-center">
                  {renderAnimatedText("Experience Next-Gen Trading", "")}
                </h3>
                <p className="text-zinc-400 text-base sm:text-xl leading-relaxed">
@@ -271,7 +276,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
 
         {/* JOIN NEBULAMARKET QUOTE SECTION */}
         <section className="reveal py-12 sm:py-20 flex flex-col items-center text-center space-y-8 sm:space-y-12">
-            <h2 className="text-3xl sm:text-4xl lg:text-7xl font-black text-blue-500 tracking-tighter uppercase mb-2 flex flex-wrap justify-center">
+            <h2 className="text-3xl sm:text-4xl lg:text-7xl font-black text-blue-500 tracking-tighter uppercase mb-2 justify-center">
               {renderAnimatedText("Join Nebulamarket Now", "")}
             </h2>
             
@@ -279,7 +284,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
                 <Quote size={40} sm:size={80} strokeWidth={1} />
             </div>
             
-            <h2 className="text-2xl sm:text-4xl lg:text-7xl font-black text-white tracking-tight max-w-5xl leading-tight uppercase px-4 flex flex-wrap justify-center">
+            <h2 className="text-2xl sm:text-4xl lg:text-7xl font-black text-white tracking-tight max-w-5xl leading-tight uppercase px-4 justify-center">
                 {renderAnimatedText("\"If you don't find a way to make money while you sleep, you will work until you die.\"", "")}
             </h2>
 
@@ -421,7 +426,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
                           <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-[0_0_30px_rgba(59,130,246,0.4)] transition-transform hover:rotate-12 duration-500">
                               <Sparkles size={24} className="text-white" />
                           </div>
-                          <span className="text-3xl font-black text-white uppercase tracking-tighter">Nebula<span className="text-blue-500">market</span></span>
+                          <span className="text-3xl font-black text-white uppercase tracking-tighter whitespace-nowrap">Nebula<span className="text-blue-500">market</span></span>
                       </div>
                       <div className="space-y-6">
                           <p className="text-zinc-400 text-base leading-relaxed max-w-md">

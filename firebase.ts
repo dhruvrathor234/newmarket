@@ -8,7 +8,7 @@ import firebaseConfig from './firebase-applet-config.json';
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 // Initialize Firestore
-export const db = getFirestore(app);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 // Initialize Auth with explicit settings for iframe compatibility
 export const auth = initializeAuth(app, {

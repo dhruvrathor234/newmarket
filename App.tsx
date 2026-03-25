@@ -11,6 +11,7 @@ import PortfolioView from './components/views/PortfolioView';
 import IntelligenceView from './components/views/IntelligenceView';
 import AssistantView from './components/views/AssistantView';
 import ProfileView from './components/views/ProfileView';
+import SubscriptionView from './components/views/SubscriptionView';
 
 import { BotState, Trade, TradeType, RiskSettings, Symbol, View, MarketDetails, Alert, NebulaV5Settings, MarketAnalysis, AccountType, TradingMode, HedgingBotSettings, HFTBotSettings, UserStats } from './types';
 import { INITIAL_BALANCE, ASSETS, CRON_INTERVAL_MS } from './constants';
@@ -191,38 +192,64 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
+    const handleGlobalError = (event: ErrorEvent) => {
+      console.error("[Global Error]", event.error || event.message);
+      if (event.message.includes("Script error")) {
+        console.warn("Script error detected. This is often due to cross-origin issues or blocked scripts.");
+      }
+    };
+    window.addEventListener('error', handleGlobalError);
+    return () => window.removeEventListener('error', handleGlobalError);
+  }, []);
+
+  useEffect(() => {
     let unsubStats: (() => void) | null = null;
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser && firebaseUser.emailVerified) {
         setUser({ email: firebaseUser.email || '' });
         
-        // Fetch or Initialize User Stats
-        const statsRef = doc(db, 'user_stats', firebaseUser.uid);
-        const statsSnap = await getDoc(statsRef);
-        
-        if (statsSnap.exists()) {
-          setUserStats(statsSnap.data() as UserStats);
-        } else {
-          const initialStats: UserStats = {
-            userId: firebaseUser.uid,
-            totalProfit: 0,
-            totalFeesOwed: 0,
-            totalFeesPaid: 0,
-            amountOwed: 0,
-            isLocked: false,
-            lastUpdated: Date.now()
-          };
-          await setDoc(statsRef, initialStats);
-          setUserStats(initialStats);
-        }
-
-        // Listen for real-time updates to stats (e.g. when payment is made)
-        unsubStats = onSnapshot(statsRef, (doc) => {
-          if (doc.exists()) {
-            setUserStats(doc.data() as UserStats);
+        try {
+          // Fetch or Initialize User Stats
+          const statsRef = doc(db, 'user_stats', firebaseUser.uid);
+          const statsSnap = await getDoc(statsRef);
+          
+          if (statsSnap.exists()) {
+            setUserStats(statsSnap.data() as UserStats);
+          } else {
+            const initialStats: UserStats = {
+              userId: firebaseUser.uid,
+              totalProfit: 0,
+              totalFeesOwed: 0,
+              totalFeesPaid: 0,
+              amountOwed: 0,
+              isLocked: false,
+              subscriptionActive: false,
+              trialStart: new Date().toISOString(),
+              trialEnd: new Date(Date.now() - 1000).toISOString(), // Set to past so it's not active by default
+              lastUpdated: Date.now()
+            };
+            await setDoc(statsRef, initialStats);
+            setUserStats(initialStats);
           }
-        });
+
+          // Listen for real-time updates to stats (e.g. when payment is made)
+          unsubStats = onSnapshot(statsRef, (doc) => {
+            if (doc.exists()) {
+              setUserStats(doc.data() as UserStats);
+            }
+          }, (error) => {
+            console.error("Firestore Stats Stream Error:", error);
+            if (error.message.includes("offline")) {
+              addLog("Cloud link unstable. Operating in local mode.", "warning");
+            }
+          });
+        } catch (error: any) {
+          console.error("Firestore Initialization Error:", error);
+          if (error.message.includes("offline")) {
+            addLog("Cloud terminal offline. Check your connection.", "error");
+          }
+        }
 
         if (requestedViewRef.current) {
           setCurrentView(requestedViewRef.current);
@@ -262,6 +289,7 @@ const App: React.FC = () => {
             setBotState(dbBotState);
           } else {
             // First time user on this cloud, initialize their profile
+            await databaseService.saveUser(uid, auth.currentUser!.email || "");
             await databaseService.saveBotState(uid, botState);
           }
           
@@ -295,9 +323,11 @@ const App: React.FC = () => {
     // Sync to Supabase if logged in and initial load is done
     if (user && auth.currentUser && !isInitialLoad) {
       const timeoutId = setTimeout(() => {
-        databaseService.saveTrades(auth.currentUser!.uid, trades);
-        databaseService.saveBotState(auth.currentUser!.uid, botState);
-        databaseService.saveLogs(auth.currentUser!.uid, logs);
+        const uid = auth.currentUser!.uid;
+        databaseService.saveTrades(uid, trades);
+        databaseService.saveBotState(uid, botState);
+        databaseService.saveLogs(uid, logs);
+        databaseService.updateBalance(uid, botState.balance);
       }, 2000); // 2 second debounce to prevent spamming
       
       return () => clearTimeout(timeoutId);
@@ -323,9 +353,27 @@ const App: React.FC = () => {
     if (!user) {
       requestedViewRef.current = view;
       setShowLogin(true);
-    } else {
-      setCurrentView(view);
+      return;
     }
+
+    // Subscription Access Control
+    if (view === 'INTELLIGENCE' || view === 'ASSISTANT') {
+      const now = new Date();
+      const trialEnd = userStats?.trialEnd ? new Date(userStats.trialEnd) : null;
+      const subExpiry = userStats?.subscriptionExpiry ? new Date(userStats.subscriptionExpiry) : null;
+      const isSubActive = userStats?.subscriptionActive || false;
+
+      const hasTrial = trialEnd && now < trialEnd;
+      const hasSub = isSubActive && subExpiry && now < subExpiry;
+
+      if (!hasTrial && !hasSub) {
+        addLog("Access Denied: Subscription required for AI features.", "warning");
+        setCurrentView('SUBSCRIPTION');
+        return;
+      }
+    }
+
+    setCurrentView(view);
   };
 
   const handleLogout = async () => {
@@ -990,6 +1038,18 @@ const App: React.FC = () => {
 
         <div className={currentView === 'PROFILE' ? 'block' : 'hidden'}>
           {user && <ProfileView userEmail={user.email} botState={botState} onConnectBinance={handleConnectBinance} userStats={userStats} />}
+        </div>
+
+        <div className={currentView === 'SUBSCRIPTION' ? 'block' : 'hidden'}>
+          {user && (
+            <SubscriptionView 
+              userStats={userStats}
+              onSuccess={() => {
+                addLog("Access granted to Nebula protocols.", "success");
+                setCurrentView('TERMINAL');
+              }}
+            />
+          )}
         </div>
       </main>
     </div>

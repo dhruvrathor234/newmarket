@@ -58,7 +58,7 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
   const [openTabs, setOpenTabs] = useState<Symbol[]>([props.symbol]);
   const [showTfMenu, setShowTfMenu] = useState(false);
   const [activeTf, setActiveTf] = useState(props.selectedTimeframe || '15m');
-  const [markers, setMarkers] = useState<ChartMarker[]>([]);
+  const [markersMap, setMarkersMap] = useState<Record<string, ChartMarker[]>>({});
   const [activeView, setActiveView] = useState<'CHART' | 'BACKTEST'>('CHART');
   const [indicators, setIndicators] = useState<string[]>(['VOLUME', 'EMA']);
   const [showIndicatorsMenu, setShowIndicatorsMenu] = useState(false);
@@ -142,26 +142,40 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
     setShowTfMenu(false);
   };
 
+  // Sync first layout symbol with active symbol
+  useEffect(() => {
+    setLayoutSymbols(prev => {
+      const next = [...prev];
+      next[0] = props.symbol;
+      return next;
+    });
+  }, [props.symbol]);
+
   // Calculate Markers for Nebula V5
   useEffect(() => {
     let interval: any;
     
-    const updateMarkers = () => {
+    const updateMarkers = async () => {
       if (props.activeStrategy === 'NEBULA_V5') {
-        fetchCandles(props.symbol, activeTf as any).then(candles => {
-          if (props.symbol === 'XAUUSD') {
-            console.log(`[NebulaV5 Debug] Fetched ${candles.length} candles for XAUUSD (${activeTf})`);
+        const chartCount = getChartCount();
+        const symbolsToUpdate = Array.from(new Set(layoutSymbols.slice(0, chartCount)));
+        
+        const newMarkersMap: Record<string, ChartMarker[]> = {};
+        
+        await Promise.all(symbolsToUpdate.map(async (symUnknown) => {
+          const sym = symUnknown as Symbol;
+          try {
+            const candles = await fetchCandles(sym, activeTf as any);
+            const m = calculateNebulaV5Markers(candles, props.nebulaV5Settings);
+            newMarkersMap[sym] = m;
+          } catch (err) {
+            console.error(`Error fetching candles for ${sym} (Nebula V5):`, err);
           }
-          const m = calculateNebulaV5Markers(candles, props.nebulaV5Settings);
-          if (props.symbol === 'XAUUSD') {
-            console.log(`[NebulaV5 Debug] Generated ${m.length} markers for XAUUSD`);
-          }
-          setMarkers(m);
-        }).catch(err => {
-          console.error("Error fetching candles for Nebula V5:", err);
-        });
+        }));
+        
+        setMarkersMap(newMarkersMap);
       } else {
-        setMarkers([]);
+        setMarkersMap({});
       }
     };
 
@@ -171,7 +185,7 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
     interval = setInterval(updateMarkers, 5000);
 
     return () => clearInterval(interval);
-  }, [props.symbol, activeTf, props.activeStrategy, props.nebulaV5Settings]);
+  }, [layoutSymbols, layout, activeTf, props.activeStrategy, props.nebulaV5Settings]);
 
   const handleToggleCustomBot = () => {
     if (props.botState.strategy === 'CUSTOM_AI' && props.isBotActive) {
@@ -191,7 +205,7 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                   <div className="w-6 h-6 bg-blue-600 rounded flex items-center justify-center shadow-[0_0_10px_rgba(59,130,246,0.4)]">
                     <Sparkles size={14} className="text-white" />
                   </div>
-                  <span className="hidden sm:inline font-bold text-[10px] text-white font-sans uppercase tracking-[0.2em]">Nebula<span className="text-blue-500">market</span></span>
+                  <span className="hidden sm:inline font-bold text-[10px] text-white font-sans uppercase tracking-[0.2em] whitespace-nowrap">Nebula<span className="text-blue-500">market</span></span>
               </div>
               <div className="h-8 w-px bg-white/5 mx-1 hidden sm:block"></div>
               
@@ -437,7 +451,7 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                           currentPrice={props.prices[layoutSymbols[idx] || props.symbol]} 
                           timeframe={activeTf}
                           trades={props.trades.filter(t => t.accountType === props.botState.accountType)}
-                          markers={layoutSymbols[idx] === props.symbol ? markers : []}
+                          markers={markersMap[layoutSymbols[idx] || props.symbol] || []}
                           onUpdateTrade={props.onUpdateTrade}
                           indicators={indicators}
                         />

@@ -13,7 +13,7 @@ export enum TradeType {
   LIMIT_SELL = 'LIMIT_SELL'
 }
 
-export type View = 'DASHBOARD' | 'TERMINAL' | 'BUILDER' | 'INTELLIGENCE' | 'PORTFOLIO' | 'ASSISTANT' | 'PROFILE';
+export type View = 'DASHBOARD' | 'TERMINAL' | 'BUILDER' | 'INTELLIGENCE' | 'PORTFOLIO' | 'ASSISTANT' | 'PROFILE' | 'SUBSCRIPTION';
 export type BotStrategy = 'SENTIMENT' | 'TECHNICAL_V2' | 'NEBULA_V5' | 'NEBULA_V6' | 'CUSTOM_AI' | 'HEDGING_BOT' | 'HFT_BOT';
 export type BacktestStrategy = BotStrategy;
 export enum AccountType {
@@ -62,6 +62,11 @@ export interface UserStats {
   totalFeesPaid: number;
   amountOwed: number;
   isLocked: boolean;
+  subscriptionActive: boolean;
+  subscriptionExpiry?: string;
+  trialClaimed: boolean;
+  trialStart: string;
+  trialEnd: string;
   lastUpdated: number;
 }
 

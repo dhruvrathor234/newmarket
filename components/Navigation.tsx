@@ -39,7 +39,7 @@ const Navigation: React.FC<NavigationProps> = ({ currentView, onNavigate, userEm
               <div className="w-7 h-7 sm:w-8 sm:h-8 bg-blue-600 rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.3)] group-hover:scale-110 group-hover:rotate-6 transition-all duration-500">
                 <Sparkles size={16} className="text-white" />
               </div>
-              <span className="font-bold text-sm sm:text-lg tracking-tight text-white font-mono uppercase group-hover:text-blue-400 transition-colors">
+              <span className="font-bold text-sm sm:text-lg tracking-tight text-white font-mono uppercase group-hover:text-blue-400 transition-colors whitespace-nowrap">
                 Nebula<span className="text-blue-500 group-hover:text-white transition-colors">market</span>
               </span>
             </div>
