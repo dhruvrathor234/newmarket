@@ -31,10 +31,13 @@ const SubscriptionView: React.FC<SubscriptionViewProps> = ({ userStats, onSucces
         headers: { 'Content-Type': 'application/json' }
       });
       
-      if (!orderRes.ok) throw new Error('Failed to create order');
-      const order = await orderRes.ok ? await orderRes.json() : null;
+      const orderData = await orderRes.json();
 
-      if (!order) throw new Error('Invalid order response');
+      if (!orderRes.ok) {
+        throw new Error(orderData.error || orderData.details || 'Failed to create order');
+      }
+      
+      const order = orderData;
 
       // 2. Open Razorpay Checkout
       const options = {

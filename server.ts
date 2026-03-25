@@ -15,18 +15,18 @@ dotenv.config({ override: true });
 // Fix for ESM default import issues with binance-api-node
 const Binance = (BinanceFactory as any).default || BinanceFactory;
 
+const isPlaceholder = (key: string | undefined) => {
+  if (!key) return true;
+  const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'GEMINI_API_KEY'];
+  return placeholders.some(p => key.toUpperCase().includes(p.toUpperCase()));
+};
+
 // Prioritize user-provided GEMINI_API_KEY from .env or Settings
 // Fallback to API_KEY only if it looks like a real key (not a placeholder)
 const getGeminiKey = () => {
   const envKey = process.env.GEMINI_API_KEY;
   const platformKey = process.env.API_KEY;
   
-  const isPlaceholder = (key: string | undefined) => {
-    if (!key) return true;
-    const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'GEMINI_API_KEY'];
-    return placeholders.some(p => key.toUpperCase().includes(p.toUpperCase()));
-  };
-
   if (envKey && !isPlaceholder(envKey)) return envKey;
   if (platformKey && !isPlaceholder(platformKey)) return platformKey;
   
@@ -44,10 +44,17 @@ if (!admin.apps.length) {
 const dbAdmin = admin.firestore();
 
 // --- RAZORPAY SETUP ---
-const razorpay = new Razorpay({
+const RazorpayInstance = (Razorpay as any).default || Razorpay;
+const razorpay = new RazorpayInstance({
   key_id: process.env.RAZORPAY_KEY_ID || 'rzp_live_SVUMHcTC82q1XW',
   key_secret: process.env.RAZORPAY_KEY_SECRET || '2fA8XWIMqjkKM8T7pJjzQUXx'
 });
+
+if (razorpay.key_id && !isPlaceholder(razorpay.key_id)) {
+  console.log(`[Razorpay] Key detected. Prefix: ${razorpay.key_id.substring(0, 8)}...`);
+} else {
+  console.warn("[Razorpay] No valid Key ID found. Using fallback or placeholder.");
+}
 
 // --- IN-MEMORY CACHE ---
 const cache = {
@@ -56,12 +63,6 @@ const cache = {
     timestamp: 0,
     ttl: 1000 * 60 * 60 // 1 hour
   }
-};
-
-const isPlaceholder = (key: string | undefined) => {
-  if (!key) return true;
-  const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'GEMINI_API_KEY'];
-  return placeholders.some(p => key.toUpperCase().includes(p.toUpperCase()));
 };
 
 if (GEMINI_API_KEY && !isPlaceholder(GEMINI_API_KEY)) {
@@ -416,6 +417,7 @@ app.post("/api/ai/backtest-data", async (req, res) => {
 
 app.post("/api/razorpay/create-order", async (req, res) => {
   try {
+    console.log("[Razorpay] Creating order...");
     const options = {
       amount: 100, // ₹1 in paise
       currency: "INR",
@@ -423,10 +425,19 @@ app.post("/api/razorpay/create-order", async (req, res) => {
     };
 
     const order = await razorpay.orders.create(options);
+    console.log("[Razorpay] Order created:", order.id);
     res.json(order);
   } catch (error: any) {
-    console.error("Razorpay order error:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Razorpay order error details:", {
+      message: error.message,
+      description: error.description,
+      code: error.code,
+      metadata: error.metadata
+    });
+    res.status(500).json({ 
+      error: error.message || "Failed to create order",
+      details: error.description || "Check server logs for more info"
+    });
   }
 });
 
