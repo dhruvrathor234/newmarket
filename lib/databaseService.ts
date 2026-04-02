@@ -1,6 +1,5 @@
-
 import { supabase } from './supabase';
-import { Trade, BotState, TradingMode, AccountType, TradeType, Symbol } from '../types';
+import { Trade, BotState } from '../types';
 
 export const databaseService = {
   // --- PROFILES / BOT STATE ---
@@ -11,37 +10,23 @@ export const databaseService = {
         id: userId,
         balance: state.balance,
         equity: state.equity,
-        strategy: state.strategy,
-        status_message: state.statusMessage,
-        is_running: state.isRunning,
-        last_run_time: state.lastRunTime,
-        custom_logic: state.customLogic,
-        // Attempt to save extra fields if they exist in schema
         paper_balance: state.paperBalance,
         paper_equity: state.paperEquity,
         real_balance: state.realBalance,
         real_equity: state.realEquity,
+        last_run_time: state.lastRunTime,
+        strategy: state.strategy,
+        status_message: state.statusMessage,
+        custom_logic: state.customLogic,
+        is_running: state.isRunning,
         account_type: state.accountType,
+        binance_api_key: state.binanceApiKey,
+        binance_api_secret: state.binanceApiSecret,
+        is_binance_connected: state.isBinanceConnected,
         trading_mode: state.tradingMode,
         updated_at: new Date().toISOString()
       });
-    if (error) {
-      console.warn('Supabase schema might be limited, falling back to basic save:', error.message);
-      // Fallback to basic save if extra columns don't exist
-      await supabase
-        .from('profiles')
-        .upsert({
-          id: userId,
-          balance: state.balance,
-          equity: state.equity,
-          strategy: state.strategy,
-          status_message: state.statusMessage,
-          is_running: state.isRunning,
-          last_run_time: state.lastRunTime,
-          custom_logic: state.customLogic,
-          updated_at: new Date().toISOString()
-        });
-    }
+    if (error) console.error('Error saving bot state to Supabase:', error);
   },
 
   async loadBotState(userId: string): Promise<BotState | null> {
@@ -50,32 +35,33 @@ export const databaseService = {
       .select('*')
       .eq('id', userId)
       .single();
-    
+
     if (error || !data) return null;
-    
+
     return {
       isRunning: data.is_running,
       strategy: data.strategy,
       balance: data.balance,
       equity: data.equity,
-      paperBalance: data.paper_balance ?? data.balance,
-      paperEquity: data.paper_equity ?? data.equity,
-      realBalance: data.real_balance ?? data.balance,
-      realEquity: data.real_equity ?? data.equity,
+      paperBalance: data.paper_balance || data.balance,
+      paperEquity: data.paper_equity || data.equity,
+      realBalance: data.real_balance || 0,
+      realEquity: data.real_equity || 0,
       lastRunTime: data.last_run_time,
       statusMessage: data.status_message,
       customLogic: data.custom_logic,
-      accountType: (data.account_type as AccountType) || AccountType.PAPER,
-      tradingMode: (data.trading_mode as TradingMode) || TradingMode.SPOT,
-      binanceApiKey: '',
-      binanceApiSecret: '',
-      isBinanceConnected: false
+      accountType: data.account_type || 'PAPER',
+      binanceApiKey: data.binance_api_key,
+      binanceApiSecret: data.binance_api_secret,
+      isBinanceConnected: data.is_binance_connected || false,
+      tradingMode: data.trading_mode || 'SPOT'
     };
   },
 
   // --- TRADES ---
   async saveTrades(userId: string, trades: Trade[]) {
     if (!trades || trades.length === 0) return;
+    
     const tradesToSync = trades.map(t => ({
       id: t.id,
       user_id: userId,
@@ -91,13 +77,14 @@ export const databaseService = {
       pnl: t.pnl,
       open_time: t.openTime,
       close_time: t.closeTime,
-      status: t.status
+      status: t.status,
+      account_type: t.accountType
     }));
 
     const { error } = await supabase
       .from('trades')
       .upsert(tradesToSync);
-    
+
     if (error) console.error('Error saving trades to Supabase:', error);
   },
 
@@ -107,13 +94,13 @@ export const databaseService = {
       .select('*')
       .eq('user_id', userId)
       .order('open_time', { ascending: false });
-    
+
     if (error || !data) return [];
-    
+
     return data.map(t => ({
       id: t.id,
-      symbol: (t.symbol as Symbol),
-      type: (t.type as TradeType),
+      symbol: t.symbol,
+      type: t.type,
       entryPrice: t.entry_price,
       limitPrice: t.limit_price,
       closePrice: t.close_price,
@@ -124,8 +111,8 @@ export const databaseService = {
       pnl: t.pnl,
       openTime: t.open_time,
       closeTime: t.close_time,
-      status: (t.status as 'OPEN' | 'CLOSED' | 'PENDING'),
-      accountType: AccountType.PAPER
+      status: t.status,
+      accountType: t.account_type || 'PAPER'
     }));
   },
 
@@ -133,7 +120,7 @@ export const databaseService = {
   async saveLogs(userId: string, logs: any[]) {
     if (!logs || logs.length === 0) return;
     const logsToSync = logs.map(l => ({
-      id: l.id, 
+      id: l.id,
       user_id: userId,
       time: l.time,
       message: l.message,
@@ -143,7 +130,7 @@ export const databaseService = {
     const { error } = await supabase
       .from('logs')
       .upsert(logsToSync);
-    
+
     if (error) console.error('Error saving logs to Supabase:', error);
   },
 
@@ -152,11 +139,11 @@ export const databaseService = {
       .from('logs')
       .select('*')
       .eq('user_id', userId)
-      .order('created_at', { ascending: false })
+      .order('time', { ascending: false })
       .limit(100);
-    
+
     if (error || !data) return [];
-    
+
     return data.map(l => ({
       id: l.id,
       time: l.time,
@@ -206,7 +193,7 @@ export const databaseService = {
   async saveUser(id: string, email: string) {
     const { error } = await supabase
       .from("profiles")
-      .upsert([{ id: id, balance: 500 }]);
+      .upsert([{ id: id, email: email, balance: 500 }]);
     if (error) console.error('Error saving user:', error);
   }
 };

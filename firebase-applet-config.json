@@ -1,10 +1,10 @@
 {
   "projectId": "nebulamarketnew",
-  "appId": "1:478429465149:web:a7372c752521117f2ef854",
+  "appId": "1:478429465149:web:587035e30c5b396d2ef854",
   "apiKey": "AIzaSyDkGFB85tq82upFEJmikOYeP_UhpNLGUbQ",
   "authDomain": "nebulamarketnew.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-534d587d-0cda-4676-8daf-097236cab408",
+  "firestoreDatabaseId": "(default)",
   "storageBucket": "nebulamarketnew.firebasestorage.app",
   "messagingSenderId": "478429465149",
-  "measurementId": ""
+  "measurementId": "G-HMJKJTDCN3"
 }

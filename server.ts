@@ -5,21 +5,11 @@ import { createServer as createViteServer } from "vite";
 import BinanceFactory from 'binance-api-node';
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from 'dotenv';
-import Razorpay from 'razorpay';
-import crypto from 'crypto';
-import admin from 'firebase-admin';
-import firebaseConfig from './firebase-applet-config.json';
 
 dotenv.config({ override: true });
 
 // Fix for ESM default import issues with binance-api-node
 const Binance = (BinanceFactory as any).default || BinanceFactory;
-
-const isPlaceholder = (key: string | undefined) => {
-  if (!key) return true;
-  const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'GEMINI_API_KEY'];
-  return placeholders.some(p => key.toUpperCase().includes(p.toUpperCase()));
-};
 
 // Prioritize user-provided GEMINI_API_KEY from .env or Settings
 // Fallback to API_KEY only if it looks like a real key (not a placeholder)
@@ -27,6 +17,12 @@ const getGeminiKey = () => {
   const envKey = process.env.GEMINI_API_KEY;
   const platformKey = process.env.API_KEY;
   
+  const isPlaceholder = (key: string | undefined) => {
+    if (!key) return true;
+    const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'GEMINI_API_KEY'];
+    return placeholders.some(p => key.toUpperCase().includes(p.toUpperCase()));
+  };
+
   if (envKey && !isPlaceholder(envKey)) return envKey;
   if (platformKey && !isPlaceholder(platformKey)) return platformKey;
   
@@ -35,27 +31,6 @@ const getGeminiKey = () => {
 
 const GEMINI_API_KEY = getGeminiKey();
 
-// --- FIREBASE ADMIN SETUP ---
-if (!admin.apps.length) {
-  admin.initializeApp({
-    projectId: firebaseConfig.projectId,
-  });
-}
-const dbAdmin = admin.firestore();
-
-// --- RAZORPAY SETUP ---
-const RazorpayInstance = (Razorpay as any).default || Razorpay;
-const razorpay = new RazorpayInstance({
-  key_id: process.env.RAZORPAY_KEY_ID || 'rzp_live_SVUMHcTC82q1XW',
-  key_secret: process.env.RAZORPAY_KEY_SECRET || '2fA8XWIMqjkKM8T7pJjzQUXx'
-});
-
-if (razorpay.key_id && !isPlaceholder(razorpay.key_id)) {
-  console.log(`[Razorpay] Key detected. Prefix: ${razorpay.key_id.substring(0, 8)}...`);
-} else {
-  console.warn("[Razorpay] No valid Key ID found. Using fallback or placeholder.");
-}
-
 // --- IN-MEMORY CACHE ---
 const cache = {
   economicEvents: {
@@ -63,6 +38,12 @@ const cache = {
     timestamp: 0,
     ttl: 1000 * 60 * 60 // 1 hour
   }
+};
+
+const isPlaceholder = (key: string | undefined) => {
+  if (!key) return true;
+  const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'GEMINI_API_KEY'];
+  return placeholders.some(p => key.toUpperCase().includes(p.toUpperCase()));
 };
 
 if (GEMINI_API_KEY && !isPlaceholder(GEMINI_API_KEY)) {
@@ -409,134 +390,6 @@ app.post("/api/ai/backtest-data", async (req, res) => {
         details: error.message
       });
     }
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// --- RAZORPAY ENDPOINTS ---
-
-app.post("/api/razorpay/create-order", async (req, res) => {
-  try {
-    console.log("[Razorpay] Creating order...");
-    const options = {
-      amount: 100, // ₹1 in paise
-      currency: "INR",
-      receipt: "order_rcptid_" + Date.now()
-    };
-
-    const order = await razorpay.orders.create(options);
-    console.log("[Razorpay] Order created:", order.id);
-    res.json(order);
-  } catch (error: any) {
-    console.error("Razorpay order error details:", {
-      message: error.message,
-      description: error.description,
-      code: error.code,
-      metadata: error.metadata
-    });
-    res.status(500).json({ 
-      error: error.message || "Failed to create order",
-      details: error.description || "Check server logs for more info"
-    });
-  }
-});
-
-app.post("/api/razorpay/verify-payment", async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, userId } = req.body;
-
-  if (!userId) {
-    return res.status(400).json({ error: "Missing userId" });
-  }
-
-  const body = razorpay_order_id + "|" + razorpay_payment_id;
-
-  const expectedSignature = crypto
-    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || '2fA8XWIMqjkKM8T7pJjzQUXx')
-    .update(body)
-    .digest("hex");
-
-  if (expectedSignature === razorpay_signature) {
-    try {
-      // Update Firebase user stats
-      const userStatsRef = dbAdmin.collection('user_stats').doc(userId);
-      const userStatsDoc = await userStatsRef.get();
-
-      const now = new Date();
-      const expiry = new Date();
-      expiry.setDate(now.getDate() + 30);
-
-      if (userStatsDoc.exists) {
-        await userStatsRef.update({
-          subscriptionActive: true,
-          subscriptionExpiry: expiry.toISOString(),
-          lastUpdated: now.toISOString()
-        });
-      } else {
-        // Should not happen if trial was set up on signup, but handle just in case
-        await userStatsRef.set({
-          userId,
-          totalProfit: 0,
-          totalFeesOwed: 0,
-          totalFeesPaid: 0,
-          amountOwed: 0,
-          isLocked: false,
-          subscriptionActive: true,
-          subscriptionExpiry: expiry.toISOString(),
-          trialStart: now.toISOString(),
-          trialEnd: new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-          lastUpdated: now.toISOString()
-        });
-      }
-
-      res.json({ status: "success" });
-    } catch (error: any) {
-      console.error("Firebase update error:", error);
-      res.status(500).json({ error: "Payment verified but failed to update subscription status" });
-    }
-  } else {
-    res.status(400).json({ status: "failed" });
-  }
-});
-
-app.post("/api/subscription/start-trial", async (req, res) => {
-  const { userId } = req.body;
-  if (!userId) return res.status(400).json({ error: "Missing userId" });
-
-  try {
-    const userStatsRef = dbAdmin.collection('user_stats').doc(userId);
-    const userStatsDoc = await userStatsRef.get();
-
-    const now = new Date();
-    const trialEnd = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
-
-    if (userStatsDoc.exists) {
-      const data = userStatsDoc.data();
-      // Only allow starting trial if it hasn't been started before (trialStart is in the past or null)
-      // Or if the user explicitly wants to start it now.
-      // The user said "as soon as they click free trial".
-      
-      await userStatsRef.update({
-        trialStart: now.toISOString(),
-        trialEnd: trialEnd.toISOString(),
-        lastUpdated: now.toISOString()
-      });
-    } else {
-      await userStatsRef.set({
-        userId,
-        totalProfit: 0,
-        totalFeesOwed: 0,
-        totalFeesPaid: 0,
-        amountOwed: 0,
-        isLocked: false,
-        subscriptionActive: false,
-        trialStart: now.toISOString(),
-        trialEnd: trialEnd.toISOString(),
-        lastUpdated: now.toISOString()
-      });
-    }
-    res.json({ status: "success", trialEnd: trialEnd.toISOString() });
-  } catch (error: any) {
-    console.error("Trial start error:", error);
     res.status(500).json({ error: error.message });
   }
 });

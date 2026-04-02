@@ -11,14 +11,14 @@ import PortfolioView from './components/views/PortfolioView';
 import IntelligenceView from './components/views/IntelligenceView';
 import AssistantView from './components/views/AssistantView';
 import ProfileView from './components/views/ProfileView';
-import SubscriptionView from './components/views/SubscriptionView';
 
-import { BotState, Trade, TradeType, RiskSettings, Symbol, View, MarketDetails, Alert, NebulaV5Settings, MarketAnalysis, AccountType, TradingMode, HedgingBotSettings, HFTBotSettings, UserStats } from './types';
+import { BotState, Trade, TradeType, RiskSettings, Symbol, View, MarketDetails, Alert, NebulaV5Settings, MarketAnalysis, AccountType, TradingMode, HedgingBotSettings, HFTBotSettings, UserStats, Candle } from './types';
 import { INITIAL_BALANCE, ASSETS, CRON_INTERVAL_MS } from './constants';
 import { getMarketDetails, fetchCandles } from './services/priceService';
 import { analyzeNebulaV5 } from './services/nebulaV5Service';
 import { analyzeHFTBot, calculateHFTLotSize } from './services/hftBotService';
 import { analyzeMarket, evaluateCustomLogic } from './services/geminiService';
+import { aiIntelligenceService } from './services/aiIntelligenceService';
 
 import { auth, db } from './firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -145,6 +145,7 @@ const App: React.FC = () => {
   });
 
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [candles, setCandles] = useState<Candle[]>([]);
 
   const recordTradeToFirestore = async (trade: Trade, realizedPnL: number) => {
     if (!auth.currentUser || trade.accountType !== AccountType.REAL) return;
@@ -224,9 +225,6 @@ const App: React.FC = () => {
               totalFeesPaid: 0,
               amountOwed: 0,
               isLocked: false,
-              subscriptionActive: false,
-              trialStart: new Date().toISOString(),
-              trialEnd: new Date(Date.now() - 1000).toISOString(), // Set to past so it's not active by default
               lastUpdated: Date.now()
             };
             await setDoc(statsRef, initialStats);
@@ -353,28 +351,47 @@ const App: React.FC = () => {
     if (!user) {
       requestedViewRef.current = view;
       setShowLogin(true);
-      return;
+    } else {
+      setCurrentView(view);
     }
-
-    // Subscription Access Control
-    if (view === 'INTELLIGENCE' || view === 'ASSISTANT') {
-      const now = new Date();
-      const trialEnd = userStats?.trialEnd ? new Date(userStats.trialEnd) : null;
-      const subExpiry = userStats?.subscriptionExpiry ? new Date(userStats.subscriptionExpiry) : null;
-      const isSubActive = userStats?.subscriptionActive || false;
-
-      const hasTrial = trialEnd && now < trialEnd;
-      const hasSub = isSubActive && subExpiry && now < subExpiry;
-
-      if (!hasTrial && !hasSub) {
-        addLog("Access Denied: Subscription required for AI features.", "warning");
-        setCurrentView('SUBSCRIPTION');
-        return;
-      }
-    }
-
-    setCurrentView(view);
   };
+
+  const handleCopyTrade = (analysis: MarketAnalysis) => {
+    if (userStats?.isLocked) return;
+    
+    const risk = riskSettings[activeSymbol];
+    const asset = ASSETS[activeSymbol];
+    const riskAmount = (botState.balance * risk.riskPercentage) / 100;
+    const calculatedLotSize = riskAmount / (risk.stopLossDistance * asset.CONTRACT_SIZE);
+    const lotSize = Math.max(0.01, parseFloat(calculatedLotSize.toFixed(2)));
+
+    let finalSL = risk.stopLossDistance;
+    let finalTP = risk.takeProfitDistance;
+
+    if (analysis.customParams?.stopLoss) {
+      finalSL = Math.abs(analysis.customParams.stopLoss - prices[activeSymbol]);
+    }
+    if (analysis.customParams?.takeProfit) {
+      finalTP = Math.abs(analysis.customParams.takeProfit - prices[activeSymbol]);
+    }
+
+    handleManualOpen(analysis.decision, lotSize, finalSL, finalTP);
+    addLog(`AI Signal Copied: ${analysis.decision} on ${activeSymbol}`, 'success');
+  };
+
+  useEffect(() => {
+    const updateCandles = async () => {
+      try {
+        const data = await fetchCandles(activeSymbol, nebulaV5Settings.timeframe);
+        setCandles(data);
+      } catch (error) {
+        console.error("Error fetching candles for AI:", error);
+      }
+    };
+    updateCandles();
+    const interval = setInterval(updateCandles, 30000);
+    return () => clearInterval(interval);
+  }, [activeSymbol, nebulaV5Settings.timeframe]);
 
   const handleLogout = async () => {
     try {
@@ -578,6 +595,11 @@ const App: React.FC = () => {
         const point = 0.00001;
         const spreadInPoints = Math.round(spread / point);
         result = analyzeHFTBot(candles, activeSymbol, hftSettingsRef.current, spreadInPoints);
+    } else if (strategy === 'AI_INTELLIGENCE') {
+        addLog(`Deep AI Intelligence analysis for ${activeSymbol}...`, 'info');
+        setBotState(prev => ({ ...prev, statusMessage: "Gemini Deep Scan..." }));
+        const candles = await fetchCandles(activeSymbol, nebulaV5SettingsRef.current.timeframe);
+        result = await aiIntelligenceService.analyzeMarket(activeSymbol, candles, nebulaV5SettingsRef.current.timeframe);
     }
 
     if (result) {
@@ -996,7 +1018,29 @@ const App: React.FC = () => {
         type={walletModal.type} 
         currentBalance={botState.balance} 
         onClose={() => setWalletModal(p => ({ ...p, isOpen: false }))} 
-        onConfirm={a => { setBotState(p => ({...p, balance: p.balance + (walletModal.type === 'deposit' ? a : -a)})); addLog(`${walletModal.type === 'deposit' ? 'Deposit' : 'Withdrawal'} of $${a} completed.`, 'success'); }} 
+        onConfirm={a => { 
+          setBotState(p => {
+            const amount = walletModal.type === 'deposit' ? a : -a;
+            const isReal = p.accountType === AccountType.REAL;
+            
+            const nextPaperBalance = isReal ? p.paperBalance : p.paperBalance + amount;
+            const nextRealBalance = isReal ? p.realBalance + amount : p.realBalance;
+            
+            const nextPaperEquity = isReal ? p.paperEquity : p.paperEquity + amount;
+            const nextRealEquity = isReal ? p.realEquity + amount : p.realEquity;
+
+            return {
+              ...p,
+              paperBalance: nextPaperBalance,
+              paperEquity: nextPaperEquity,
+              realBalance: nextRealBalance,
+              realEquity: nextRealEquity,
+              balance: isReal ? nextRealBalance : nextPaperBalance,
+              equity: isReal ? nextRealEquity : nextPaperEquity
+            };
+          });
+          addLog(`${walletModal.type === 'deposit' ? 'Deposit' : 'Withdrawal'} of $${a} completed.`, 'success'); 
+        }} 
       />
 
       {showLogin && <LoginScreen onLogin={(email) => { setShowLogin(false); }} onCancel={() => setShowLogin(false)} />}
@@ -1020,6 +1064,9 @@ const App: React.FC = () => {
             onSetAccountType={handleSetAccountType}
             onSetTradingMode={handleSetTradingMode}
             onConnectBinance={handleConnectBinance}
+            onCopyTrade={handleCopyTrade}
+            lastAnalysis={lastAnalysis}
+            candles={candles}
             isLocked={userStats?.isLocked}
           />
         </div>
@@ -1038,18 +1085,6 @@ const App: React.FC = () => {
 
         <div className={currentView === 'PROFILE' ? 'block' : 'hidden'}>
           {user && <ProfileView userEmail={user.email} botState={botState} onConnectBinance={handleConnectBinance} userStats={userStats} />}
-        </div>
-
-        <div className={currentView === 'SUBSCRIPTION' ? 'block' : 'hidden'}>
-          {user && (
-            <SubscriptionView 
-              userStats={userStats}
-              onSuccess={() => {
-                addLog("Access granted to Nebula protocols.", "success");
-                setCurrentView('TERMINAL');
-              }}
-            />
-          )}
         </div>
       </main>
     </div>

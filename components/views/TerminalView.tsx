@@ -7,11 +7,13 @@ import OrderPanel from '../OrderPanel';
 import OpenTradesPanel from '../OpenTradesPanel';
 import OrderBook from '../OrderBook';
 import CustomBotPanel from '../CustomBotPanel';
+import AssetAIInsight from '../AssetAIInsight';
 import BacktestEngine from '../BacktestEngine';
-import { Symbol, Trade, RiskSettings, TradeType, BotStrategy, BotState, MarketDetails, Alert, NebulaV5Settings, ChartMarker, AccountType, TradingMode, HedgingBotSettings } from '../../types';
+import { Symbol, Trade, RiskSettings, TradeType, BotStrategy, BotState, MarketDetails, Alert, NebulaV5Settings, ChartMarker, AccountType, TradingMode, HedgingBotSettings, Candle, MarketAnalysis } from '../../types';
 import { ASSETS } from '../../constants';
 import { Sparkles, User, X, ChevronDown, Clock, LayoutDashboard, ShoppingCart, BarChart2, ShieldCheck, Globe } from 'lucide-react';
 import { calculateNebulaV5Markers } from '../../services/nebulaV5Service';
+import { aiIntelligenceService } from '../../services/aiIntelligenceService';
 import { fetchCandles } from '../../services/priceService';
 
 interface TerminalViewProps {
@@ -51,6 +53,9 @@ interface TerminalViewProps {
   onSetAccountType: (type: AccountType) => void;
   onSetTradingMode: (mode: TradingMode) => void;
   onConnectBinance: (apiKey: string, apiSecret: string) => void;
+  onCopyTrade: (analysis: MarketAnalysis) => void;
+  lastAnalysis: MarketAnalysis | null;
+  candles: Candle[];
   isLocked?: boolean;
 }
 
@@ -174,6 +179,13 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
         }));
         
         setMarkersMap(newMarkersMap);
+      } else if (props.activeStrategy === 'AI_INTELLIGENCE') {
+        if (props.lastAnalysis && props.lastAnalysis.symbol === props.symbol) {
+          const m = aiIntelligenceService.calculateMarkers(props.lastAnalysis);
+          setMarkersMap({ [props.symbol]: m });
+        } else {
+          setMarkersMap({});
+        }
       } else {
         setMarkersMap({});
       }
@@ -275,14 +287,22 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                 </div>
               )}
 
-              <div className="hidden sm:flex items-center gap-1.5 sm:gap-2">
-                {props.botState.accountType === AccountType.PAPER && (
-                  <>
-                    <button onClick={props.onOpenDeposit} className="bg-blue-600 text-white px-2 sm:px-5 py-1.5 sm:py-2 rounded text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/10 active:scale-95">Deposit</button>
-                    <button onClick={props.onOpenWithdraw} className="bg-transparent text-slate-400 border border-white/10 px-2 sm:px-5 py-1.5 sm:py-2 rounded text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:text-white hover:bg-white/5 transition-all active:scale-95">Withdraw</button>
-                  </>
-                )}
-              </div>
+              {props.botState.accountType === AccountType.PAPER && (
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  <button 
+                    onClick={props.onOpenDeposit} 
+                    className="bg-blue-600 text-white px-2 sm:px-5 py-1.5 sm:py-2 rounded text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/10 active:scale-95"
+                  >
+                    Deposit
+                  </button>
+                  <button 
+                    onClick={props.onOpenWithdraw} 
+                    className="bg-transparent text-slate-400 border border-white/10 px-2 sm:px-5 py-1.5 sm:py-2 rounded text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:text-white hover:bg-white/5 transition-all active:scale-95"
+                  >
+                    Withdraw
+                  </button>
+                </div>
+              )}
               <User size={16} className="text-slate-500 cursor-pointer hover:text-white ml-1 sm:ml-2" />
           </div>
       </header>
@@ -525,6 +545,8 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                     onSetTradingMode={props.onSetTradingMode}
                     isBinanceConnected={props.botState.isBinanceConnected}
                     onConnectBinance={props.onConnectBinance}
+                    onOpenDeposit={props.onOpenDeposit}
+                    onOpenWithdraw={props.onOpenWithdraw}
                     isLocked={props.isLocked}
                  />
                  
@@ -539,6 +561,15 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                  />
 
                  <OrderBook symbol={props.symbol} currentPrice={props.prices[props.symbol]} />
+                  <div className="p-4 border-t border-white/5">
+                    <AssetAIInsight 
+                      symbol={props.symbol}
+                      candles={props.candles}
+                      timeframe={props.selectedTimeframe}
+                      onCopyTrade={props.onCopyTrade}
+                      isLocked={props.isLocked}
+                    />
+                  </div>
              </div>
         </aside>
       </div>

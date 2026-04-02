@@ -1,9 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Terminal, Mail, Cpu, Globe, Zap, ArrowRight, Activity, ShieldCheck, X, Lock, UserPlus, CheckCircle2, RotateCcw } from 'lucide-react';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, signOut } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 interface LoginScreenProps {
   onLogin: (email: string) => void;
@@ -273,25 +272,6 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, onCancel }) => {
     try {
       if (isSignUp) {
         const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        
-        // Initialize User Stats with 7-day trial
-        const now = new Date();
-        const trialEnd = new Date();
-        trialEnd.setDate(now.getDate() + 7);
-
-        await setDoc(doc(db, 'user_stats', userCredential.user.uid), {
-          userId: userCredential.user.uid,
-          totalProfit: 0,
-          totalFeesOwed: 0,
-          totalFeesPaid: 0,
-          amountOwed: 0,
-          isLocked: false,
-          subscriptionActive: false,
-          trialStart: now.toISOString(),
-          trialEnd: trialEnd.toISOString(),
-          lastUpdated: now.toISOString()
-        });
-
         // Send Verification Email immediately after signup
         await sendEmailVerification(userCredential.user);
         setIsVerificationSent(true);

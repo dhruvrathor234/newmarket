@@ -34,6 +34,8 @@ interface OrderPanelProps {
     onSetTradingMode: (mode: TradingMode) => void;
     isBinanceConnected: boolean;
     onConnectBinance: (apiKey: string, apiSecret: string) => void;
+    onOpenDeposit: () => void;
+    onOpenWithdraw: () => void;
     isLocked?: boolean;
 }
 
@@ -62,6 +64,8 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     onSetTradingMode,
     isBinanceConnected,
     onConnectBinance,
+    onOpenDeposit,
+    onOpenWithdraw,
     isLocked
 }) => {
     const [orderType, setOrderType] = useState<'MARKET' | 'PENDING'>('MARKET');
@@ -140,6 +144,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     }, [orderType]);
 
     const BOTS: {id: BotStrategy, name: string, icon: any, desc: string}[] = [
+        { id: 'AI_INTELLIGENCE', name: 'AI Intelligence', icon: BrainCircuit, desc: 'Deep Market Analysis' },
         { id: 'SENTIMENT', name: 'AI News Agent', icon: Bot, desc: 'Real-time Sentiment' },
         { id: 'HFT_BOT', name: 'HFT Bot', icon: Zap, desc: 'High Frequency Alpha' },
         { id: 'NEBULA_V5', name: 'Nebula V5', icon: BrainCircuit, desc: 'Trend Pivot Alpha' },
@@ -283,7 +288,16 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
                             {/* Available Balance */}
                             <div className="flex items-center justify-between px-1">
-                                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Avbl</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Avbl</span>
+                                    <button 
+                                        onClick={() => window.location.reload()} 
+                                        className="p-1 hover:bg-white/5 rounded transition-colors text-slate-500 hover:text-white"
+                                        title="Refresh Balance"
+                                    >
+                                        <Zap size={10} />
+                                    </button>
+                                </div>
                                 <span className="text-[10px] font-mono font-bold text-white">{balance.toFixed(2)} {tradingMode === TradingMode.FUTURES ? 'USDT' : 'USD'}</span>
                             </div>
 
@@ -452,7 +466,23 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                             )}
 
                             <div className="space-y-2">
-                                <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Volume (Lots)</span>
+                                <div className="flex justify-between px-1">
+                                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Volume (Lots)</span>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={onOpenDeposit}
+                                            className="text-[8px] font-black text-blue-500 uppercase hover:underline"
+                                        >
+                                            Deposit
+                                        </button>
+                                        <button 
+                                            onClick={onOpenWithdraw}
+                                            className="text-[8px] font-black text-slate-500 uppercase hover:underline"
+                                        >
+                                            Withdraw
+                                        </button>
+                                    </div>
+                                </div>
                                 <div className="flex gap-2">
                                     <button onClick={() => setLots(Math.max(0.01, parseFloat((lots - 0.1).toFixed(2))))} className="w-10 h-10 bg-white/5 rounded-lg border border-white/5 flex items-center justify-center text-slate-400 hover:text-white transition-colors">-</button>
                                     <input type="number" value={lots} onChange={e => setLots(parseFloat(e.target.value))} className="flex-1 bg-black/60 border border-white/10 rounded-lg px-3 text-center text-white font-mono font-bold outline-none focus:border-blue-500/40" />

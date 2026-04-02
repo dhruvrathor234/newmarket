@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { User, ShieldCheck, Mail, MapPin, Phone, Upload, CheckCircle, AlertCircle, Camera, CreditCard, Loader2, XCircle, Key, ExternalLink, Info, ShieldAlert, TrendingUp, Sparkles } from 'lucide-react';
+import { User, ShieldCheck, Mail, MapPin, Phone, Upload, CheckCircle, AlertCircle, Camera, CreditCard, Loader2, XCircle, Key, ExternalLink, Info, ShieldAlert, TrendingUp } from 'lucide-react';
 import { verifyIdentityDocuments } from '../../services/geminiService';
 import { BotState, UserStats } from '../../types';
 import NebulaFeeDashboard from '../NebulaFeeDashboard';
@@ -13,7 +13,7 @@ interface ProfileViewProps {
 }
 
 const ProfileView: React.FC<ProfileViewProps> = ({ userEmail, botState, userStats, onConnectBinance }) => {
-  const [activeTab, setActiveTab] = useState<'DETAILS' | 'KYC' | 'BINANCE' | 'FEES' | 'SUBSCRIPTION'>('DETAILS');
+  const [activeTab, setActiveTab] = useState<'DETAILS' | 'KYC' | 'BINANCE' | 'FEES'>('DETAILS');
   const [formData, setFormData] = useState({
     name: 'John Doe',
     address: '123 Wall Street, Financial District, NY 10005',
@@ -108,13 +108,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userEmail, botState, userStat
           >
             <TrendingUp size={16} /> Nebula Share
             {userStats?.isLocked && <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>}
-          </button>
-          <button 
-            onClick={() => setActiveTab('SUBSCRIPTION')}
-            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all relative ${activeTab === 'SUBSCRIPTION' ? 'bg-purple-600 text-white shadow-xl shadow-purple-900/20' : 'text-zinc-500 hover:bg-white/5 hover:text-white'}`}
-          >
-            <Sparkles size={16} /> Subscription
-            {userStats?.subscriptionActive && <div className="absolute top-2 right-2 w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>}
           </button>
         </div>
 
@@ -386,48 +379,6 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userEmail, botState, userStat
                     // Stats will update via onSnapshot in App.tsx
                   }} 
                 />
-              </div>
-            )}
-
-            {activeTab === 'SUBSCRIPTION' && userStats && (
-              <div className="space-y-10 animate-fade-in">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 p-6 bg-white/5 rounded-3xl border border-white/5">
-                    <div className="flex items-center gap-4">
-                        <div className={`p-4 rounded-2xl ${
-                          userStats.subscriptionActive ? 'bg-purple-500/10 text-purple-500' : 'bg-amber-500/10 text-amber-500'
-                        }`}>
-                            <Sparkles size={24} />
-                        </div>
-                        <div>
-                            <h4 className="text-white font-black uppercase tracking-tight text-lg">Subscription Status</h4>
-                            <p className={`text-[10px] font-black uppercase tracking-widest ${
-                              userStats.subscriptionActive ? 'text-emerald-500' : 'text-amber-500'
-                            }`}>
-                                {userStats.subscriptionActive ? 'Active Pro Member' : 'Free Tier / Trial'}
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="p-6 rounded-3xl bg-black/40 border border-white/5 space-y-2">
-                        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Trial Ends</p>
-                        <p className="text-xl font-black text-white">{new Date(userStats.trialEnd).toLocaleDateString()}</p>
-                    </div>
-                    <div className="p-6 rounded-3xl bg-black/40 border border-white/5 space-y-2">
-                        <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Subscription Expiry</p>
-                        <p className="text-xl font-black text-white">
-                            {userStats.subscriptionExpiry ? new Date(userStats.subscriptionExpiry).toLocaleDateString() : 'N/A'}
-                        </p>
-                    </div>
-                </div>
-
-                <div className="p-6 rounded-3xl bg-purple-500/5 border border-purple-500/10">
-                    <p className="text-[11px] text-zinc-400 leading-relaxed">
-                        Pro members get full access to the Intelligence Suite and the Nebula Assistant. 
-                        The Trading Terminal is free for all users. Subscriptions are billed monthly at ₹1.
-                    </p>
-                </div>
               </div>
             )}
           </div>

@@ -20,7 +20,7 @@
     },
     "UserStats": {
       "title": "UserStats",
-      "description": "Aggregate trading stats, fee information, and subscription status for a user.",
+      "description": "Aggregate trading stats and fee information for a user.",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "The UID of the user." },
@@ -29,13 +29,9 @@
         "totalFeesPaid": { "type": "number", "description": "Total fees the user has already paid to Nebula." },
         "amountOwed": { "type": "number", "description": "The current outstanding balance (totalFeesOwed - totalFeesPaid)." },
         "isLocked": { "type": "boolean", "description": "Whether the user's account is soft-locked due to unpaid fees." },
-        "subscriptionActive": { "type": "boolean", "description": "Whether the user has an active paid subscription." },
-        "subscriptionExpiry": { "type": "string", "format": "date-time", "description": "When the paid subscription expires." },
-        "trialStart": { "type": "string", "format": "date-time", "description": "When the 3-day free trial started." },
-        "trialEnd": { "type": "string", "format": "date-time", "description": "When the 3-day free trial ends." },
         "lastUpdated": { "type": "string", "format": "date-time", "description": "Last time stats were calculated." }
       },
-      "required": ["userId", "totalProfit", "totalFeesOwed", "totalFeesPaid", "amountOwed", "isLocked", "subscriptionActive", "trialStart", "trialEnd"]
+      "required": ["userId", "totalProfit", "totalFeesOwed", "totalFeesPaid", "amountOwed", "isLocked"]
     }
   },
   "firestore": {

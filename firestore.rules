@@ -24,12 +24,6 @@ service cloud.firestore {
     //   - totalFeesPaid: number (required)
     //   - amountOwed: number (required)
     //   - isLocked: bool (required)
-    //   - subscriptionActive: bool (required)
-    //   - subscriptionExpiry: string (optional)
-    //   - trialClaimed: bool (required)
-    //   - trialStart: string (required)
-    //   - trialEnd: string (required)
-    //   - lastUpdated: number (required)
     //
     // ===============================================================
 
@@ -60,24 +54,8 @@ service cloud.firestore {
     match /user_stats/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && 
-                      request.resource.data.keys().hasAll(['userId', 'totalProfit', 'totalFeesOwed', 'totalFeesPaid', 'amountOwed', 'isLocked', 'subscriptionActive', 'trialClaimed', 'trialStart', 'trialEnd', 'lastUpdated']);
+                      request.resource.data.keys().hasAll(['userId', 'totalProfit', 'totalFeesOwed', 'totalFeesPaid', 'amountOwed', 'isLocked']);
       allow update: if isOwner(userId) || isAdmin();
-    }
-
-    // Bot State Collection
-    match /bot_state/{userId} {
-      allow read: if isOwner(userId);
-      allow create, update: if isOwner(userId) && 
-                              request.resource.data.keys().hasAll(['userId', 'isRunning', 'strategy', 'balance', 'equity']);
-      allow delete: if false;
-    }
-
-    // Logs Collection
-    match /logs/{logId} {
-      allow read: if isOwner(resource.data.userId);
-      allow create: if isOwner(request.resource.data.userId) && 
-                      request.resource.data.keys().hasAll(['userId', 'time', 'message', 'type']);
-      allow update, delete: if false;
     }
   }
 }
