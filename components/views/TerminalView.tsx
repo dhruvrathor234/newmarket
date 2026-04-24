@@ -289,6 +289,10 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
 
               {props.botState.accountType === AccountType.PAPER && (
                 <div className="flex items-center gap-1.5 sm:gap-2">
+                  <div className="hidden md:flex flex-col items-end mr-4">
+                    <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Paper Balance</span>
+                    <span className="text-[11px] font-mono font-bold text-blue-400">${props.balance.toFixed(2)}</span>
+                  </div>
                   <button 
                     onClick={props.onOpenDeposit} 
                     className="bg-blue-600 text-white px-2 sm:px-5 py-1.5 sm:py-2 rounded text-[9px] sm:text-[10px] font-black uppercase tracking-widest hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/10 active:scale-95"
@@ -301,6 +305,19 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                   >
                     Withdraw
                   </button>
+                </div>
+              )}
+
+              {props.botState.accountType === AccountType.REAL && (
+                <div className="flex items-center gap-4 mr-2">
+                  <div className="flex flex-col items-end">
+                    <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Real Balance</span>
+                    <span className="text-[11px] font-mono font-bold text-yellow-500">${props.balance.toFixed(2)}</span>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Real Equity</span>
+                    <span className="text-[11px] font-mono font-bold text-white">${props.botState.equity.toFixed(2)}</span>
+                  </div>
                 </div>
               )}
               <User size={16} className="text-slate-500 cursor-pointer hover:text-white ml-1 sm:ml-2" />

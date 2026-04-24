@@ -11,6 +11,8 @@ interface PortfolioViewProps {
   onCloseTrade: (tradeId: string) => void;
   onUpdateTrade: (tradeId: string, newSL: number, newTP: number) => void;
   accountType: AccountType;
+  balance: number;
+  equity: number;
 }
 
 const PortfolioTradeRow: React.FC<{
@@ -100,7 +102,7 @@ const PortfolioTradeRow: React.FC<{
     );
 };
 
-const PortfolioView: React.FC<PortfolioViewProps> = ({ trades, prices, onCloseTrade, onUpdateTrade, accountType }) => {
+const PortfolioView: React.FC<PortfolioViewProps> = ({ trades, prices, onCloseTrade, onUpdateTrade, accountType, balance, equity }) => {
   const filteredTrades = trades.filter(t => t.accountType === accountType);
   const closedTrades = filteredTrades.filter(t => t.status === 'CLOSED').reverse();
   const openTrades = filteredTrades.filter(t => t.status === 'OPEN').reverse();
@@ -157,6 +159,20 @@ const PortfolioView: React.FC<PortfolioViewProps> = ({ trades, prices, onCloseTr
            </div>
            
            <div className="glass-panel px-5 py-3 rounded-lg flex items-center gap-6 border-white/10 overflow-x-auto no-scrollbar">
+               <div className="flex flex-col items-end min-w-max">
+                  <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider mb-1">Account Balance</span>
+                  <span className="text-lg font-mono font-bold leading-none text-white">
+                    ${balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+               </div>
+               <div className="w-px h-8 bg-white/10"></div>
+               <div className="flex flex-col items-end min-w-max">
+                  <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider mb-1">Total Equity</span>
+                  <span className="text-lg font-mono font-bold leading-none text-blue-400">
+                    ${equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </span>
+               </div>
+               <div className="w-px h-8 bg-white/10"></div>
                <div className="flex flex-col items-end min-w-max">
                   <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider mb-1">Realized Profits</span>
                   <span className={`text-lg font-mono font-bold leading-none ${closedPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>

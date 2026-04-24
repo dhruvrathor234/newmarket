@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { initializeAuth, browserLocalPersistence, browserPopupRedirectResolver } from 'firebase/auth';
+import { initializeAuth, browserLocalPersistence, browserPopupRedirectResolver, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getAnalytics } from 'firebase/analytics';
 import firebaseConfig from './firebase-applet-config.json';
@@ -15,6 +15,8 @@ export const auth = initializeAuth(app, {
   persistence: browserLocalPersistence,
   popupRedirectResolver: browserPopupRedirectResolver,
 });
+
+export const googleProvider = new GoogleAuthProvider();
 
 // Initialize Analytics safely
 export const analytics = typeof window !== 'undefined' ? (() => {

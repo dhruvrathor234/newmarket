@@ -57,5 +57,11 @@ service cloud.firestore {
                       request.resource.data.keys().hasAll(['userId', 'totalProfit', 'totalFeesOwed', 'totalFeesPaid', 'amountOwed', 'isLocked']);
       allow update: if isOwner(userId) || isAdmin();
     }
+
+    // Support Tickets Collection
+    match /support_tickets/{ticketId} {
+      allow create: if true; // Allow both anonymous and authenticated users to contact support
+      allow read, update, delete: if isAdmin(); // Only admins can see support requests
+    }
   }
 }

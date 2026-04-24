@@ -1072,7 +1072,7 @@ const App: React.FC = () => {
         </div>
 
         <div className={currentView === 'PORTFOLIO' ? 'block' : 'hidden'}>
-          <PortfolioView trades={trades} prices={prices} onCloseTrade={handleManualClose} onUpdateTrade={handleUpdateTrade} accountType={botState.accountType} />
+          <PortfolioView trades={trades} prices={prices} onCloseTrade={handleManualClose} onUpdateTrade={handleUpdateTrade} accountType={botState.accountType} balance={botState.balance} equity={botState.equity} />
         </div>
 
         <div className={currentView === 'INTELLIGENCE' ? 'block' : 'hidden'}>

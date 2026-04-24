@@ -3,8 +3,10 @@ import React, { useState, useEffect } from 'react';
 import { Symbol, NebulaV5Settings, BacktestReport, BotStrategy, BacktestStrategy, HFTBotSettings, HedgingBotSettings } from '../types';
 import { fetchCandles } from '../services/priceService';
 import { runNebulaBacktest, runCustomBacktest, runStrategyBacktest } from '../services/backtestService';
-import { Play, TrendingUp, TrendingDown, BarChart3, List, PieChart, ChevronRight, ChevronDown, Download, BrainCircuit, Sparkles, Settings2 } from 'lucide-react';
+import { Play, TrendingUp, TrendingDown, BarChart3, List, PieChart, ChevronRight, ChevronDown, Download, BrainCircuit, Sparkles, Settings2, FileText } from 'lucide-react';
 import { ASSETS } from '../constants';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface BacktestEngineProps {
   currentSymbol: Symbol;
@@ -57,6 +59,81 @@ const BacktestEngine: React.FC<BacktestEngineProps> = ({
     } finally {
       setIsRunning(false);
     }
+  };
+
+  const downloadPDF = () => {
+    if (!report) return;
+
+    const doc = new jsPDF();
+    
+    // Add Title
+    doc.setFontSize(20);
+    doc.setTextColor(30, 34, 45);
+    doc.text('Nebulamarket Backtest Report', 14, 22);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Symbol: ${symbol}`, 14, 32);
+    doc.text(`Timeframe: ${timeframe}`, 14, 38);
+    doc.text(`Strategy: ${strategy}`, 14, 44);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 50);
+
+    // Summary Box
+    doc.setFillColor(245, 247, 250);
+    doc.rect(14, 58, 182, 40, 'F');
+    
+    doc.setFontSize(12);
+    doc.setTextColor(30, 34, 45);
+    doc.text('Performance Summary', 18, 68);
+    
+    doc.setFontSize(10);
+    doc.text(`Net Profit: ${report.netProfit.toFixed(2)} USD`, 18, 76);
+    doc.text(`Win Rate: ${report.winRate.toFixed(1)}%`, 18, 82);
+    doc.text(`Profit Factor: ${report.profitFactor.toFixed(2)}`, 18, 88);
+    doc.text(`Max Drawdown: ${report.maxDrawdown.toFixed(2)}%`, 18, 94);
+    
+    doc.text(`Total Trades: ${report.totalTrades}`, 100, 76);
+    doc.text(`Avg. Trade profit: ${report.avgTrade.toFixed(2)} USD`, 100, 82);
+    doc.text(`Wins: ${report.trades.filter(t => t.status === 'WIN').length}`, 100, 88);
+    doc.text(`Losses: ${report.trades.filter(t => t.status === 'LOSS').length}`, 100, 94);
+
+    // Trade History Table
+    const tableData = report.trades.map(trade => [
+      trade.type,
+      trade.entryPrice.toFixed(2),
+      trade.exitPrice.toFixed(2),
+      `${trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}`,
+      `${trade.pnlPercentage >= 0 ? '+' : ''}${trade.pnlPercentage.toFixed(2)}%`,
+      trade.status
+    ]);
+
+    autoTable(doc, {
+      startY: 110,
+      head: [['Type', 'Entry', 'Exit', 'PnL (USD)', 'PnL (%)', 'Status']],
+      body: tableData,
+      theme: 'striped',
+      headStyles: { fillColor: [30, 34, 45], textColor: [255, 255, 255] },
+      columnStyles: {
+        3: { fontStyle: 'bold' },
+        4: { fontStyle: 'bold' },
+        5: { fontStyle: 'bold' }
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body') {
+            if (data.column.index === 3 || data.column.index === 4) {
+                const val = parseFloat(data.cell.text[0]);
+                if (val >= 0) data.cell.styles.textColor = [16, 185, 129];
+                else data.cell.styles.textColor = [244, 63, 94];
+            }
+            if (data.column.index === 5) {
+                if (data.cell.text[0] === 'WIN') data.cell.styles.textColor = [16, 185, 129];
+                else data.cell.styles.textColor = [244, 63, 94];
+            }
+        }
+      }
+    });
+
+    doc.save(`Nebulamarket_Backtest_${symbol}_${strategy}_${new Date().getTime()}.pdf`);
   };
 
   const timeframes = ['1m', '5m', '15m', '1h', '4h', '1d'];
@@ -520,7 +597,16 @@ const BacktestEngine: React.FC<BacktestEngineProps> = ({
                     <div className="bg-[#1a1d26] rounded-xl border border-white/5 overflow-hidden">
                       <div className="px-4 py-3 border-b border-white/5 bg-white/5 flex items-center justify-between">
                         <span className="text-[10px] font-black uppercase tracking-widest">Strategy Report</span>
-                        <Download size={14} className="text-slate-500 cursor-pointer hover:text-white" />
+                        <div className="flex items-center gap-2">
+                           <button 
+                             onClick={downloadPDF}
+                             className="p-1.5 bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white rounded transition-all cursor-pointer flex items-center gap-2"
+                             title="Download PDF Report"
+                           >
+                              <Download size={12} />
+                              <span className="text-[8px] font-black uppercase">Download PDF</span>
+                           </button>
+                        </div>
                       </div>
                       <div className="p-4 flex flex-col items-center justify-center h-[120px] text-center">
                          <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden mb-4">

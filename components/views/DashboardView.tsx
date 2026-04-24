@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BotState, Trade, Symbol, View, MarketDetails } from '../../types';
 import { Coins, TrendingUp, Activity, ShieldCheck, Cpu, Zap, Globe, ArrowRight, Play, Layers, Instagram, Linkedin, Mail, Sparkles, ChevronRight, BarChart3, Lock, MessageSquare, Quote, ArrowUpRight, Info, Calendar, Layout } from 'lucide-react';
+import SupportModal from '../SupportModal';
 import { ASSETS } from '../../constants';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -54,6 +55,7 @@ const FloatingCandle: React.FC<{ delay: string; height: string; type: 'bull' | '
 
 const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices, marketDetails, activeSymbol, onNavigate, onSelectSymbol }) => {
   const [marketFilter, setMarketFilter] = useState<'ALL' | 'CRYPTO' | 'FOREX' | 'STOCKS' | 'COMMODITIES'>('ALL');
+  const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   useEffect(() => {
@@ -125,6 +127,38 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
                 <p className="text-[clamp(0.75rem,1.8vw,1.5rem)] font-light text-zinc-400 tracking-tight leading-none animate-fade-in" style={{animationDelay: '100ms'}}>
                   {renderAnimatedText("The future of automated wealth management. Execute smart strategies with built-in AI precision.", "")}
                 </p>
+              </div>
+            </div>
+
+            {/* ACCOUNT OVERVIEW CARD */}
+            <div className="animate-fade-in" style={{animationDelay: '150ms'}}>
+              <div className="glass-card p-6 rounded-[24px] border-white/10 bg-zinc-900/40 max-w-md group hover:border-blue-500/30 transition-all duration-500">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${botState.accountType === 'REAL' ? 'bg-yellow-500 shadow-[0_0_10px_#eab308]' : 'bg-blue-500 shadow-[0_0_10px_#3b82f6]'}`}></div>
+                    <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{botState.accountType === 'REAL' ? 'Real Account' : 'Paper Account'}</span>
+                  </div>
+                  <button 
+                    onClick={() => onNavigate('TERMINAL')}
+                    className="text-[9px] font-black text-blue-500 uppercase tracking-widest hover:text-white transition-colors"
+                  >
+                    Switch Account
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-8">
+                  <div>
+                    <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mb-1">Total Balance</p>
+                    <p className="text-2xl font-black text-white tracking-tighter font-mono">
+                      ${botState.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mb-1">Account Equity</p>
+                    <p className="text-2xl font-black text-blue-500 tracking-tighter font-mono">
+                      ${botState.equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
             
@@ -508,7 +542,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
                                   </div>
                                   <div>
                                       <p className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-1">Email</p>
-                                      <p className="text-xs text-zinc-300 font-mono">nebulamarketai@gmail.com</p>
+                                      <a href="mailto:nebulamarketai@gmail.com" className="text-xs text-zinc-300 font-mono hover:text-blue-400 transition-colors">nebulamarketai@gmail.com</a>
                                   </div>
                               </div>
                               <div className="flex items-center gap-4">
@@ -521,12 +555,20 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
                                   </div>
                               </div>
                           </div>
-                          <button className="w-full mt-10 py-4 border border-white/10 hover:bg-white/5 hover:border-white/30 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 hover:text-white transition-all">
+                          <button 
+                            onClick={() => setIsSupportModalOpen(true)}
+                            className="w-full mt-10 py-4 border border-white/10 hover:bg-white/5 hover:border-white/30 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 hover:text-white transition-all shadow-lg active:scale-95"
+                          >
                               Talk to Support
                           </button>
                       </div>
                   </div>
               </div>
+
+              <SupportModal 
+                isOpen={isSupportModalOpen}
+                onClose={() => setIsSupportModalOpen(false)}
+              />
 
               <div className="mt-32 pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-8">
                   <span className="text-[10px] text-zinc-700 font-mono uppercase tracking-[0.5em]">© 2025 Nebulamarket AI System. All rights reserved.</span>
