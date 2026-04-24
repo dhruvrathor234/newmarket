@@ -1,47 +1,52 @@
 {
   "entities": {
-    "Trade": {
-      "title": "Trade",
-      "description": "Represents a completed trade for tracking profit and fees.",
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user balance, equity, and bot configuration",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "The UID of the user who made the trade." },
-        "symbol": { "type": "string", "description": "The trading pair (e.g., BTCUSDT)." },
-        "type": { "type": "string", "enum": ["BUY", "SELL"], "description": "The trade direction." },
-        "entryPrice": { "type": "number", "description": "The price at which the trade was opened." },
-        "exitPrice": { "type": "number", "description": "The price at which the trade was closed." },
-        "quantity": { "type": "number", "description": "The amount of asset traded." },
-        "profit": { "type": "number", "description": "The realized profit or loss from the trade." },
-        "fees": { "type": "number", "description": "The total fees paid for the trade." },
-        "timestamp": { "type": "string", "format": "date-time", "description": "When the trade was closed." },
-        "status": { "type": "string", "enum": ["OPEN", "CLOSED"], "description": "Current status of the trade." }
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "balance": { "type": "number" },
+        "equity": { "type": "number" },
+        "strategy": { "type": "string" },
+        "isRunning": { "type": "boolean" },
+        "accountType": { "type": "string", "enum": ["PAPER", "REAL"] },
+        "tradingMode": { "type": "string", "enum": ["SPOT", "FUTURES"] },
+        "statusMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "symbol", "type", "profit", "fees", "timestamp"]
+      "required": ["userId", "balance", "equity"]
     },
-    "UserStats": {
-      "title": "UserStats",
-      "description": "Aggregate trading stats and fee information for a user.",
+    "Trade": {
+      "title": "Trading Position",
+      "description": "Stores details of an open or closed trade",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "The UID of the user." },
-        "totalProfit": { "type": "number", "description": "Cumulative net profit across all trades." },
-        "totalFeesOwed": { "type": "number", "description": "The 20% cut Nebula is owed from the total profit." },
-        "totalFeesPaid": { "type": "number", "description": "Total fees the user has already paid to Nebula." },
-        "amountOwed": { "type": "number", "description": "The current outstanding balance (totalFeesOwed - totalFeesPaid)." },
-        "isLocked": { "type": "boolean", "description": "Whether the user's account is soft-locked due to unpaid fees." },
-        "lastUpdated": { "type": "string", "format": "date-time", "description": "Last time stats were calculated." }
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "symbol": { "type": "string" },
+        "type": { "type": "string", "enum": ["BUY", "SELL"] },
+        "status": { "type": "string", "enum": ["OPEN", "CLOSED", "PENDING"] },
+        "entryPrice": { "type": "number" },
+        "closePrice": { "type": "number" },
+        "pnl": { "type": "number" },
+        "lotSize": { "type": "number" },
+        "openTime": { "type": "number" },
+        "closeTime": { "type": "number" },
+        "accountType": { "type": "string" }
       },
-      "required": ["userId", "totalProfit", "totalFeesOwed", "totalFeesPaid", "amountOwed", "isLocked"]
+      "required": ["userId", "symbol", "type", "status", "entryPrice"]
     }
   },
   "firestore": {
-    "trades": {
-      "schema": "Trade",
-      "description": "Collection of all trades made through Nebula."
+    "/profiles/{userId}": {
+      "schema": "UserProfile",
+      "description": "Individual user financial state and bot settings"
     },
-    "user_stats": {
-      "schema": "UserStats",
-      "description": "Collection of aggregate stats for each user."
+    "/trades/{tradeId}": {
+      "schema": "Trade",
+      "description": "Individual trades linked to a userId"
     }
   }
 }

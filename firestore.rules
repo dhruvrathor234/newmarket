@@ -15,44 +15,60 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isAdmin() {
-      return isAuthenticated() &&
-        request.auth.token.email == "aryanad1234567890@gmail.com" && 
-        request.auth.token.email_verified == true;
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // User Profiles / Bot State
+    // Profile Validation
+    function isValidProfile(data) {
+      return data.keys().hasAll(['userId', 'balance', 'equity']) &&
+             data.userId == request.auth.uid &&
+             data.balance is number &&
+             data.equity is number;
+    }
+
+    // Trade Validation
+    function isValidTrade(data) {
+      return data.userId == request.auth.uid &&
+             data.symbol is string &&
+             data.type in ['BUY', 'SELL'] &&
+             data.status in ['OPEN', 'CLOSED', 'PENDING'] &&
+             data.entryPrice is number &&
+             data.lotSize is number;
+    }
+
+    // User Profiles
     match /profiles/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidProfile(request.resource.data);
+      allow update: if isOwner(userId) && isValidProfile(request.resource.data);
     }
 
-    // Trades Collection
+    // Trades Collection (Flat collection with userId indexing)
     match /trades/{tradeId} {
-      // For create/read/update/delete, check if the document belongs to the user
-      allow read: if isOwner(resource.data.userId);
-      allow create: if isOwner(request.resource.data.userId);
-      allow update: if isOwner(resource.data.userId) && isOwner(request.resource.data.userId);
-      allow delete: if isOwner(resource.data.userId);
+      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
+      allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidTrade(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidTrade(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
 
     // Logs Collection
     match /logs/{logId} {
-      allow read: if isOwner(resource.data.userId);
-      allow create: if isOwner(request.resource.data.userId);
-      allow update, delete: if isOwner(resource.data.userId);
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
     }
 
-    // User Stats Collection
+    // User Stats (Legacy - maintain for backward compatibility if needed)
     match /user_stats/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId);
     }
-
-    // Support Tickets Collection
+    
+    // Support Tickets
     match /support_tickets/{ticketId} {
-      allow create: if true; 
-      allow read, update, delete: if isAdmin();
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated() && request.auth.token.email == "aryanad1234567890@gmail.com";
     }
   }
 }

@@ -32,11 +32,38 @@ const getGeminiKey = () => {
 const GEMINI_API_KEY = getGeminiKey();
 
 // --- IN-MEMORY CACHE ---
-const cache = {
+const cache: Record<string, { data: any, timestamp: number, ttl: number }> = {
   economicEvents: {
-    data: null as any,
+    data: null,
     timestamp: 0,
     ttl: 1000 * 60 * 60 // 1 hour
+  },
+  marketAnalysis: {
+    data: {} as Record<string, { data: any, timestamp: number }>,
+    timestamp: 0,
+    ttl: 1000 * 60 * 30 // 30 minutes
+  },
+  chat: {
+    data: {} as Record<string, { data: any, timestamp: number }>,
+    timestamp: 0,
+    ttl: 1000 * 60 * 5 // 5 minutes
+  }
+};
+
+const withRetry = async (fn: () => Promise<any>, retries = 2, delay = 1000) => {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const isQuotaError = error.message?.includes("429") || error.message?.includes("RESOURCE_EXHAUSTED");
+      if (i < retries && isQuotaError) {
+        console.warn(`[Neural Core] Quota hit, retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
+        await new Promise(res => setTimeout(res, delay));
+        delay *= 2;
+        continue;
+      }
+      throw error;
+    }
   }
 };
 
@@ -226,7 +253,7 @@ app.post("/api/ai/economic-events", async (req, res) => {
   }
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: "List the top 10 most critical global economic events for this week (USD, EUR, GBP).",
       config: {
@@ -248,7 +275,7 @@ app.post("/api/ai/economic-events", async (req, res) => {
           }
         }
       },
-    });
+    }));
     const events = JSON.parse(response.text || "[]");
     cache.economicEvents.data = events;
     cache.economicEvents.timestamp = now;
@@ -268,20 +295,30 @@ app.post("/api/ai/economic-events", async (req, res) => {
 app.post("/api/ai/analyze-market", async (req, res) => {
   const { symbol } = req.body;
   if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
+  
+  const now = Date.now();
+  const symbolCache = cache.marketAnalysis.data[symbol];
+  if (symbolCache && (now - symbolCache.timestamp < cache.marketAnalysis.ttl)) {
+    return res.json(symbolCache.data);
+  }
+
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   try {
-    const response = await ai.models.generateContent({ 
+    const response = await withRetry(() => ai.models.generateContent({ 
       model: "gemini-3-flash-preview", 
-      contents: `Analyze ${symbol} market news.`, 
+      contents: `Analyze ${symbol} market news and sentiment. Provide technical and fundamental insights.`, 
       config: { tools: [{ googleSearch: {} }] } 
-    });
+    }));
     const text = response.text || "{}";
     const cleaned = text.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
     const data = JSON.parse(cleaned);
     const sources = (response.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
       .filter((c: any) => c.web?.uri)
       .map((c: any) => ({ title: c.web.title, url: c.web.uri }));
-    res.json({ ...data, sources });
+    
+    const result = { ...data, sources };
+    cache.marketAnalysis.data[symbol] = { data: result, timestamp: now };
+    res.json(result);
   } catch (error: any) {
     console.error("[Neural Core] Market Analysis Error:", error);
     if (error.message?.includes("leaked")) {
@@ -320,16 +357,17 @@ app.post("/api/ai/evaluate-logic", async (req, res) => {
 app.post("/api/ai/chat", async (req, res) => {
   const { message, contextData, imageBase64 } = req.body;
   if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
+
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   const parts: any[] = [];
   if (imageBase64) parts.push({ inlineData: { data: imageBase64.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, ""), mimeType: "image/png" } });
   parts.push({ text: `Context: ${contextData}\n\nUser: ${message}` });
   try {
-    const response = await ai.models.generateContent({ 
+    const response = await withRetry(() => ai.models.generateContent({ 
       model: "gemini-3-flash-preview", 
       contents: { parts }, 
       config: { tools: [{ googleSearch: {} }] } 
-    });
+    }));
     res.json({ text: response.text || "No response." });
   } catch (error: any) {
     console.error("[Neural Core] Chat Error:", error);

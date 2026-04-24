@@ -148,35 +148,21 @@ const App: React.FC = () => {
   const [candles, setCandles] = useState<Candle[]>([]);
 
   const recordTradeToFirestore = async (trade: Trade, realizedPnL: number) => {
-    if (!auth.currentUser || trade.accountType !== AccountType.REAL) return;
+    if (!auth.currentUser) return;
 
     try {
-      const tradeData = {
-        userId: auth.currentUser.uid,
-        symbol: trade.symbol,
-        type: trade.type,
-        entryPrice: trade.entryPrice,
-        exitPrice: trade.closePrice || 0,
-        quantity: trade.lotSize,
-        profit: realizedPnL,
-        fees: Math.abs(realizedPnL * 0.001), // Simplified fee estimation
-        timestamp: new Date().toISOString(),
-        status: 'CLOSED'
-      };
-
-      await addDoc(collection(db, 'trades'), tradeData);
+      const uid = auth.currentUser.uid;
+      // Use the UUID as doc ID to ensure consistency between cloud and local
+      await databaseService.saveTrades(uid, [trade]);
 
       // Update User Stats
-      const statsRef = doc(db, 'user_stats', auth.currentUser.uid);
+      const statsRef = doc(db, 'user_stats', uid);
       const statsSnap = await getDoc(statsRef);
       if (statsSnap.exists()) {
         const currentStats = statsSnap.data() as UserStats;
         const newTotalProfit = currentStats.totalProfit + realizedPnL;
-        // Fee is 20% of net profit. If net profit is negative, fee owed is 0.
         const newTotalFeesOwed = Math.max(0, newTotalProfit * 0.2);
         const newAmountOwed = Math.max(0, newTotalFeesOwed - currentStats.totalFeesPaid);
-        
-        // Soft lock if user owes more than $5 (example threshold)
         const isLocked = newAmountOwed > 5;
 
         await updateDoc(statsRef, {
@@ -188,7 +174,7 @@ const App: React.FC = () => {
         });
       }
     } catch (error) {
-      console.error("Error recording trade to Firestore:", error);
+      console.error("Error recording trade context:", error);
     }
   };
 
@@ -269,43 +255,66 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Load data from Cloud terminal when user logs in
+  // Load and Subscribe to data from Cloud terminal when user logs in
   useEffect(() => {
-    const loadCloudData = async () => {
+    let unsubscribeBot: (() => void) | null = null;
+    let unsubscribeTrades: (() => void) | null = null;
+
+    const setupSubscriptions = async () => {
       if (user && auth.currentUser && isInitialLoad) {
         try {
           const uid = auth.currentUser!.uid;
-          addLog("Connecting to secure cloud terminal...", "info");
+          addLog("Establishing live cloud link...", "info");
           
-          const [dbBotState, dbTrades, dbLogs] = await Promise.all([
-            databaseService.loadBotState(uid),
-            databaseService.loadTrades(uid),
-            databaseService.loadLogs(uid)
-          ]);
-
-          if (dbBotState) {
-            setBotState(dbBotState);
-          } else {
-            // First time user on this cloud, initialize their profile
+          // Initial existence check and save if new user
+          const initialBotState = await databaseService.loadBotState(uid);
+          if (!initialBotState) {
             await databaseService.saveUser(uid, auth.currentUser!.email || "");
             await databaseService.saveBotState(uid, botState);
+            addLog("Cloud profile initialized.", "success");
+          } else {
+             setBotState(initialBotState);
           }
-          
-          if (dbTrades && dbTrades.length > 0) setTrades(dbTrades);
-          if (dbLogs && dbLogs.length > 0) setLogs(dbLogs);
+
+          // Initial trades load
+          const initialTrades = await databaseService.loadTrades(uid);
+          if (initialTrades.length > 0) setTrades(initialTrades);
+
+          // Subscribe for real-time updates
+          unsubscribeBot = databaseService.subscribeToBotState(uid, (newState) => {
+            // Only update if not currently performing local operations that might conflict
+            // Or better: cloud is the source of truth
+            setBotState(prev => {
+              if (JSON.stringify(prev) === JSON.stringify(newState)) return prev;
+              return { ...prev, ...newState };
+            });
+          });
+
+          unsubscribeTrades = databaseService.subscribeToTrades(uid, (newTrades) => {
+            setTrades(prev => {
+              if (JSON.stringify(prev) === JSON.stringify(newTrades)) return prev;
+              return newTrades;
+            });
+          });
           
           setIsInitialLoad(false);
-          addLog("Global cloud synchronization complete.", "success");
+          addLog("Real-time cloud synchronization active.", "success");
         } catch (error) {
-          console.error("Cloud sync error:", error);
-          addLog("Cloud link unstable. Operating in localized mode.", "warning");
+          console.error("Cloud subscription error:", error);
+          addLog("Live link failed. operating in offline cache.", "warning");
         }
       }
     };
-    loadCloudData();
+
+    setupSubscriptions();
+
+    return () => {
+      if (unsubscribeBot) unsubscribeBot();
+      if (unsubscribeTrades) unsubscribeTrades();
+    };
   }, [user, isInitialLoad, auth.currentUser]);
 
-  // Sync data to Cloud (Debounced)
+  // Sync data to Cloud (Debounced) - Only for logs and local persistence
   useEffect(() => { 
     tradesRef.current = trades; 
     botStateRef.current = botState;
@@ -317,15 +326,14 @@ const App: React.FC = () => {
     storageService.saveBotState(botState);
     storageService.saveLogs(logs);
 
-    // Sync to Firestore if logged in and initial load is done
+    // We still save logs to cloud periodically
     if (user && auth.currentUser && !isInitialLoad) {
       const timeoutId = setTimeout(() => {
         const uid = auth.currentUser!.uid;
-        databaseService.saveTrades(uid, trades);
-        databaseService.saveBotState(uid, botState);
         databaseService.saveLogs(uid, logs);
-        databaseService.updateBalance(uid, botState.balance);
-      }, 2000); // 2 second debounce to prevent spamming
+        // We don't saveTrades/saveBotState here anymore because they should be updated
+        // atomically when actions happen in the app (e.g. trade open/close)
+      }, 5000); 
       
       return () => clearTimeout(timeoutId);
     }
@@ -496,6 +504,12 @@ const App: React.FC = () => {
     };
     setTrades(prev => [...prev, newTrade]);
     addLog(`Order Placed: ${tradeType} ${lots} lot ${sym} @ ${fillPrice.toFixed(2)}`, 'info');
+    
+    // Sync immediately to cloud
+    if (user && auth.currentUser) {
+      databaseService.saveTrades(auth.currentUser.uid, [newTrade]);
+      databaseService.saveBotState(auth.currentUser.uid, botState);
+    }
   };
 
   const handleManualClose = async (tradeId: string, overridePrice?: number) => {

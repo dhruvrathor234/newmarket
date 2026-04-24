@@ -1,9 +1,70 @@
 
 import { db } from '../firebase';
-import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc, writeBatch, serverTimestamp, orderBy, limit } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc, writeBatch, serverTimestamp, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { Trade, BotState, TradingMode, AccountType, TradeType, Symbol } from '../types';
 
 export const databaseService = {
+  // --- REAL-TIME SUBSCRIPTIONS ---
+  subscribeToBotState(userId: string, callback: (state: BotState) => void) {
+    const docRef = doc(db, 'profiles', userId);
+    return onSnapshot(docRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        callback({
+          isRunning: data.isRunning,
+          strategy: data.strategy,
+          balance: data.balance,
+          equity: data.equity,
+          paperBalance: data.paperBalance ?? data.balance,
+          paperEquity: data.paperEquity ?? data.equity,
+          realBalance: data.realBalance ?? data.balance,
+          realEquity: data.realEquity ?? data.equity,
+          lastRunTime: data.lastRunTime,
+          statusMessage: data.statusMessage,
+          customLogic: data.customLogic,
+          accountType: (data.accountType as AccountType) || AccountType.PAPER,
+          tradingMode: (data.tradingMode as TradingMode) || TradingMode.SPOT,
+          binanceApiKey: '',
+          binanceApiSecret: '',
+          isBinanceConnected: false
+        });
+      }
+    }, (error) => {
+      console.error("Error subscribing to bot state:", error);
+    });
+  },
+
+  subscribeToTrades(userId: string, callback: (trades: Trade[]) => void) {
+    const tradesRef = collection(db, 'trades');
+    const q = query(tradesRef, where('userId', '==', userId), orderBy('openTime', 'desc'), limit(100));
+    return onSnapshot(q, (snap) => {
+      const trades = snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          symbol: data.symbol as Symbol,
+          type: data.type as TradeType,
+          entryPrice: data.entryPrice,
+          limitPrice: data.limitPrice,
+          closePrice: data.closePrice,
+          lotSize: data.lotSize,
+          stopLoss: data.stopLoss,
+          takeProfit: data.takeProfit,
+          riskPercentage: data.riskPercentage,
+          pnl: data.pnl,
+          openTime: data.openTime,
+          closeTime: data.closeTime,
+          status: data.status as 'OPEN' | 'CLOSED' | 'PENDING',
+          accountType: data.accountType as AccountType,
+          binanceOrderId: data.binanceOrderId
+        };
+      });
+      callback(trades);
+    }, (error) => {
+      console.error("Error subscribing to trades:", error);
+    });
+  },
+
   // --- PROFILES / BOT STATE ---
   async saveBotState(userId: string, state: BotState) {
     try {

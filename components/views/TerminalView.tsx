@@ -135,6 +135,11 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
     }
   };
 
+  const formatUSD = (val: number | undefined | null) => {
+    if (val === undefined || val === null || isNaN(val)) return '0.00';
+    return val.toFixed(2);
+  };
+
   const handleTabSelect = (s: Symbol) => {
     props.onSelectSymbol(s);
     if (!openTabs.includes(s)) setOpenTabs([...openTabs, s]);
@@ -291,7 +296,7 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                 <div className="flex items-center gap-1.5 sm:gap-2">
                   <div className="hidden md:flex flex-col items-end mr-4">
                     <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Paper Balance</span>
-                    <span className="text-[11px] font-mono font-bold text-blue-400">${props.balance.toFixed(2)}</span>
+                    <span className="text-[11px] font-mono font-bold text-blue-400">${formatUSD(props.balance)}</span>
                   </div>
                   <button 
                     onClick={props.onOpenDeposit} 
@@ -312,11 +317,11 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                 <div className="flex items-center gap-4 mr-2">
                   <div className="flex flex-col items-end">
                     <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Real Balance</span>
-                    <span className="text-[11px] font-mono font-bold text-yellow-500">${props.balance.toFixed(2)}</span>
+                    <span className="text-[11px] font-mono font-bold text-yellow-500">${formatUSD(props.balance)}</span>
                   </div>
                   <div className="flex flex-col items-end">
                     <span className="text-[8px] text-slate-500 uppercase font-bold tracking-widest">Real Equity</span>
-                    <span className="text-[11px] font-mono font-bold text-white">${props.botState.equity.toFixed(2)}</span>
+                    <span className="text-[11px] font-mono font-bold text-white">${formatUSD(props.botState.equity)}</span>
                   </div>
                 </div>
               )}
@@ -422,11 +427,11 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                 <div className="flex items-center gap-4 text-[10px] font-mono">
                     <div className="flex items-center gap-1.5">
                         <span className="text-slate-500 uppercase font-sans font-bold">High:</span>
-                        <span className="text-emerald-500 font-bold">{props.marketDetails[props.symbol]?.high.toFixed(2) || '0.00'}</span>
+                        <span className="text-emerald-500 font-bold">{formatUSD(props.marketDetails[props.symbol]?.high)}</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                         <span className="text-slate-500 uppercase font-sans font-bold">Low:</span>
-                        <span className="text-rose-500 font-bold">{props.marketDetails[props.symbol]?.low.toFixed(2) || '0.00'}</span>
+                        <span className="text-rose-500 font-bold">{formatUSD(props.marketDetails[props.symbol]?.low)}</span>
                     </div>
                 </div>
 

@@ -88,15 +88,23 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     const [leverage, setLeverage] = useState(20);
 
     const asset = ASSETS[symbol];
-    const riskAmount = (balance * riskSettings.riskPercentage) / 100;
-    const autoLotSize = riskAmount / (riskSettings.stopLossDistance * asset.CONTRACT_SIZE);
+    const riskAmount = (balance * (riskSettings?.riskPercentage || 0)) / 100;
+    const stopLossDist = riskSettings?.stopLossDistance || asset.DEFAULT_STOP_LOSS || 10;
+    const contractSize = asset.CONTRACT_SIZE || 1;
+    const autoLotSize = riskAmount / (stopLossDist * contractSize) || 0;
 
     const currentPrice = marketDetails?.price || 0;
     const maxQuantityUSD = balance * (tradingMode === TradingMode.FUTURES ? leverage : 1);
     const maxQuantityAsset = currentPrice > 0 ? maxQuantityUSD / currentPrice : 0;
 
-    const estimatedCost = (quantityType === 'USD' ? quantity : quantity * currentPrice) / (tradingMode === TradingMode.FUTURES ? leverage : 1);
+    const qtyValue = quantity || 0;
+    const estimatedCost = (quantityType === 'USD' ? qtyValue : qtyValue * currentPrice) / (tradingMode === TradingMode.FUTURES ? leverage : 1);
     const estimatedFee = estimatedCost * 0.001; // 0.1% fee estimation
+
+    const formatNum = (val: number | undefined | null, dec = 2) => {
+        if (val === undefined || val === null || isNaN(val) || !isFinite(val)) return '0'.repeat(1) + '.' + '0'.repeat(dec);
+        return val.toFixed(dec);
+    };
 
     useEffect(() => {
         setLimitPrice(currentPrice);
@@ -266,14 +274,14 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                   className="flex flex-col items-center justify-center py-4 rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-all shadow-lg shadow-rose-950/40 active:scale-95"
                 >
                     <span className="text-[10px] font-black uppercase tracking-[0.3em]">{orderType === 'PENDING' ? 'Limit Sell' : (tradingMode === TradingMode.FUTURES ? 'Sell / Short' : 'Sell')}</span>
-                    <span className="text-[12px] font-mono font-bold mt-1">{marketDetails?.bid.toFixed(2)}</span>
+                    <span className="text-[12px] font-mono font-bold mt-1">{formatNum(marketDetails?.bid)}</span>
                 </button>
                 <button 
                   onClick={() => handleTrade(TradeType.BUY)}
                   className="flex flex-col items-center justify-center py-4 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-lg shadow-blue-950/40 active:scale-95"
                 >
                     <span className="text-[10px] font-black uppercase tracking-[0.3em]">{orderType === 'PENDING' ? 'Limit Buy' : (tradingMode === TradingMode.FUTURES ? 'Buy / Long' : 'Buy')}</span>
-                    <span className="text-[12px] font-mono font-bold mt-1">{marketDetails?.ask.toFixed(2)}</span>
+                    <span className="text-[12px] font-mono font-bold mt-1">{formatNum(marketDetails?.ask)}</span>
                 </button>
             </div>
 
@@ -298,7 +306,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                                         <Zap size={10} />
                                     </button>
                                 </div>
-                                <span className="text-[10px] font-mono font-bold text-white">{balance.toFixed(2)} {tradingMode === TradingMode.FUTURES ? 'USDT' : 'USD'}</span>
+                                <span className="text-[10px] font-mono font-bold text-white">{formatNum(balance)} {tradingMode === TradingMode.FUTURES ? 'USDT' : 'USD'}</span>
                             </div>
 
                             {/* Market Price Display */}
@@ -428,11 +436,11 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                             <div className="space-y-1.5 pt-2">
                                 <div className="flex justify-between px-1">
                                     <span className="text-[9px] text-slate-600 uppercase font-black">{tradingMode === TradingMode.FUTURES ? 'Max Buy/Sell' : 'Max Buy'}</span>
-                                    <span className="text-[9px] text-white font-bold">{maxQuantityAsset.toFixed(4)} {symbol.replace('USD', '')}</span>
+                                    <span className="text-[9px] text-white font-bold">{formatNum(maxQuantityAsset, 4)} {symbol.replace('USD', '')}</span>
                                 </div>
                                 <div className="flex justify-between px-1">
                                     <span className="text-[9px] text-slate-600 uppercase font-black">Cost</span>
-                                    <span className="text-[9px] text-white font-bold">{estimatedCost.toFixed(2)} {tradingMode === TradingMode.FUTURES ? 'USDT' : 'USD'}</span>
+                                    <span className="text-[9px] text-white font-bold">{formatNum(estimatedCost)} {tradingMode === TradingMode.FUTURES ? 'USDT' : 'USD'}</span>
                                 </div>
                             </div>
 
@@ -586,7 +594,7 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                     />
                     <div className="flex justify-between items-center p-4 rounded-xl bg-black/60 border border-white/5 shadow-inner">
                         <span className="text-[9px] text-slate-600 uppercase font-black tracking-[0.2em]">Suggested Lot</span>
-                        <span className="font-mono text-sm font-black text-blue-500">{autoLotSize.toFixed(2)}</span>
+                        <span className="font-mono text-sm font-black text-blue-500">{formatNum(autoLotSize)}</span>
                     </div>
                 </div>
             </div>
