@@ -1,212 +1,197 @@
 
-import { supabase } from './supabase';
+import { db } from '../firebase';
+import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc, writeBatch, serverTimestamp, orderBy, limit } from 'firebase/firestore';
 import { Trade, BotState, TradingMode, AccountType, TradeType, Symbol } from '../types';
 
 export const databaseService = {
   // --- PROFILES / BOT STATE ---
   async saveBotState(userId: string, state: BotState) {
-    const { error } = await supabase
-      .from('profiles')
-      .upsert({
-        id: userId,
+    try {
+      const docRef = doc(db, 'profiles', userId);
+      await setDoc(docRef, {
         balance: state.balance,
         equity: state.equity,
         strategy: state.strategy,
-        status_message: state.statusMessage,
-        is_running: state.isRunning,
-        last_run_time: state.lastRunTime,
-        custom_logic: state.customLogic,
-        // Attempt to save extra fields if they exist in schema
-        paper_balance: state.paperBalance,
-        paper_equity: state.paperEquity,
-        real_balance: state.realBalance,
-        real_equity: state.realEquity,
-        account_type: state.accountType,
-        trading_mode: state.tradingMode,
-        updated_at: new Date().toISOString()
-      });
-    if (error) {
-      console.warn('Supabase schema might be limited, falling back to basic save:', error.message);
-      // Fallback to basic save if extra columns don't exist
-      await supabase
-        .from('profiles')
-        .upsert({
-          id: userId,
-          balance: state.balance,
-          equity: state.equity,
-          strategy: state.strategy,
-          status_message: state.statusMessage,
-          is_running: state.isRunning,
-          last_run_time: state.lastRunTime,
-          custom_logic: state.customLogic,
-          updated_at: new Date().toISOString()
-        });
+        statusMessage: state.statusMessage,
+        isRunning: state.isRunning,
+        lastRunTime: state.lastRunTime,
+        customLogic: state.customLogic,
+        paperBalance: state.paperBalance,
+        paperEquity: state.paperEquity,
+        realBalance: state.realBalance,
+        realEquity: state.realEquity,
+        accountType: state.accountType,
+        tradingMode: state.tradingMode,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } catch (error) {
+      console.error('Error saving bot state to Firestore:', error);
     }
   },
 
   async loadBotState(userId: string): Promise<BotState | null> {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single();
-    
-    if (error || !data) return null;
-    
-    return {
-      isRunning: data.is_running,
-      strategy: data.strategy,
-      balance: data.balance,
-      equity: data.equity,
-      paperBalance: data.paper_balance ?? data.balance,
-      paperEquity: data.paper_equity ?? data.equity,
-      realBalance: data.real_balance ?? data.balance,
-      realEquity: data.real_equity ?? data.equity,
-      lastRunTime: data.last_run_time,
-      statusMessage: data.status_message,
-      customLogic: data.custom_logic,
-      accountType: (data.account_type as AccountType) || AccountType.PAPER,
-      tradingMode: (data.trading_mode as TradingMode) || TradingMode.SPOT,
-      binanceApiKey: '',
-      binanceApiSecret: '',
-      isBinanceConnected: false
-    };
+    try {
+      const docRef = doc(db, 'profiles', userId);
+      const snap = await getDoc(docRef);
+      
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      
+      return {
+        isRunning: data.isRunning,
+        strategy: data.strategy,
+        balance: data.balance,
+        equity: data.equity,
+        paperBalance: data.paperBalance ?? data.balance,
+        paperEquity: data.paperEquity ?? data.equity,
+        realBalance: data.realBalance ?? data.balance,
+        realEquity: data.realEquity ?? data.equity,
+        lastRunTime: data.lastRunTime,
+        statusMessage: data.statusMessage,
+        customLogic: data.customLogic,
+        accountType: (data.accountType as AccountType) || AccountType.PAPER,
+        tradingMode: (data.tradingMode as TradingMode) || TradingMode.SPOT,
+        binanceApiKey: '',
+        binanceApiSecret: '',
+        isBinanceConnected: false
+      };
+    } catch (error) {
+      console.error('Error loading bot state from Firestore:', error);
+      return null;
+    }
   },
 
   // --- TRADES ---
   async saveTrades(userId: string, trades: Trade[]) {
     if (!trades || trades.length === 0) return;
-    const tradesToSync = trades.map(t => ({
-      id: t.id,
-      user_id: userId,
-      symbol: t.symbol,
-      type: t.type,
-      entry_price: t.entryPrice,
-      limit_price: t.limitPrice,
-      close_price: t.closePrice,
-      lot_size: t.lotSize,
-      stop_loss: t.stopLoss,
-      take_profit: t.takeProfit,
-      risk_percentage: t.riskPercentage,
-      pnl: t.pnl,
-      open_time: t.openTime,
-      close_time: t.closeTime,
-      status: t.status
-    }));
+    try {
+      const batch = writeBatch(db);
+      
+      // We only sync recent or relevant trades to avoid hitting limits if there are thousands
+      // For this app, we'll sync the ones provided
+      trades.forEach(t => {
+        const tradeRef = doc(db, 'trades', t.id);
+        batch.set(tradeRef, {
+          ...t,
+          userId,
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+      });
 
-    const { error } = await supabase
-      .from('trades')
-      .upsert(tradesToSync);
-    
-    if (error) console.error('Error saving trades to Supabase:', error);
+      await batch.commit();
+    } catch (error) {
+      console.error('Error saving trades to Firestore:', error);
+    }
   },
 
   async loadTrades(userId: string): Promise<Trade[]> {
-    const { data, error } = await supabase
-      .from('trades')
-      .select('*')
-      .eq('user_id', userId)
-      .order('open_time', { ascending: false });
-    
-    if (error || !data) return [];
-    
-    return data.map(t => ({
-      id: t.id,
-      symbol: (t.symbol as Symbol),
-      type: (t.type as TradeType),
-      entryPrice: t.entry_price,
-      limitPrice: t.limit_price,
-      closePrice: t.close_price,
-      lotSize: t.lot_size,
-      stopLoss: t.stop_loss,
-      takeProfit: t.take_profit,
-      riskPercentage: t.risk_percentage,
-      pnl: t.pnl,
-      openTime: t.open_time,
-      closeTime: t.close_time,
-      status: (t.status as 'OPEN' | 'CLOSED' | 'PENDING'),
-      accountType: AccountType.PAPER
-    }));
+    try {
+      const tradesRef = collection(db, 'trades');
+      const q = query(tradesRef, where('userId', '==', userId), orderBy('openTime', 'desc'), limit(100));
+      const snap = await getDocs(q);
+      
+      return snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          symbol: data.symbol as Symbol,
+          type: data.type as TradeType,
+          entryPrice: data.entryPrice,
+          limitPrice: data.limitPrice,
+          closePrice: data.closePrice,
+          lotSize: data.lotSize,
+          stopLoss: data.stopLoss,
+          takeProfit: data.takeProfit,
+          riskPercentage: data.riskPercentage,
+          pnl: data.pnl,
+          openTime: data.openTime,
+          closeTime: data.closeTime,
+          status: data.status as 'OPEN' | 'CLOSED' | 'PENDING',
+          accountType: data.accountType as AccountType,
+          binanceOrderId: data.binanceOrderId
+        };
+      });
+    } catch (error) {
+      console.error('Error loading trades from Firestore:', error);
+      return [];
+    }
   },
 
   // --- LOGS ---
   async saveLogs(userId: string, logs: any[]) {
     if (!logs || logs.length === 0) return;
-    const logsToSync = logs.map(l => ({
-      id: l.id, 
-      user_id: userId,
-      time: l.time,
-      message: l.message,
-      type: l.type
-    }));
+    try {
+      // Logs are usually high volume, we might want to cap them
+      const recentLogs = logs.slice(-20); // Only sync last 20 logs to cloud
+      const batch = writeBatch(db);
+      
+      recentLogs.forEach(log => {
+        const logRef = doc(db, 'logs', log.id);
+        batch.set(logRef, {
+          ...log,
+          userId,
+          createdAt: serverTimestamp()
+        }, { merge: true });
+      });
 
-    const { error } = await supabase
-      .from('logs')
-      .upsert(logsToSync);
-    
-    if (error) console.error('Error saving logs to Supabase:', error);
+      await batch.commit();
+    } catch (error) {
+      console.error('Error saving logs to Firestore:', error);
+    }
   },
 
   async loadLogs(userId: string): Promise<any[]> {
-    const { data, error } = await supabase
-      .from('logs')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(100);
-    
-    if (error || !data) return [];
-    
-    return data.map(l => ({
-      id: l.id,
-      time: l.time,
-      message: l.message,
-      type: l.type
-    })).reverse();
+    try {
+      const logsRef = collection(db, 'logs');
+      const q = query(logsRef, where('userId', '==', userId), orderBy('createdAt', 'desc'), limit(50));
+      const snap = await getDocs(q);
+      
+      return snap.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          time: data.time,
+          message: data.message,
+          type: data.type
+        };
+      }).reverse();
+    } catch (error) {
+      console.error('Error loading logs from Firestore:', error);
+      return [];
+    }
   },
 
-  // --- NEW HELPER METHODS ---
+  // --- HELPER METHODS ---
   async updateBalance(userId: string, newBalance: number) {
-    const { error } = await supabase
-      .from("profiles")
-      .update({ balance: newBalance })
-      .eq("id", userId);
-    if (error) console.error('Error updating balance:', error);
-  },
-
-  async closeTrade(tradeId: string, profit: number) {
-    const { error } = await supabase
-      .from("trades")
-      .update({
-        pnl: profit,
-        status: "CLOSED",
-        close_time: Date.now()
-      })
-      .eq("id", tradeId);
-    if (error) console.error('Error closing trade:', error);
-  },
-
-  async openTrade(userId: string, asset: string, type: string, lot: number) {
-    const { error } = await supabase
-      .from("trades")
-      .insert([
-        {
-          user_id: userId,
-          symbol: asset,
-          type: type,
-          lot_size: lot,
-          pnl: 0,
-          status: "OPEN",
-          open_time: Date.now()
-        }
-      ]);
-    if (error) console.error('Error opening trade:', error);
+    try {
+      const docRef = doc(db, 'profiles', userId);
+      await updateDoc(docRef, { balance: newBalance });
+    } catch (error) {
+       // Profile might not exist yet if called early
+       console.warn('Update balance failed, profile might not exist');
+    }
   },
 
   async saveUser(id: string, email: string) {
-    const { error } = await supabase
-      .from("profiles")
-      .upsert([{ id: id, balance: 500 }]);
-    if (error) console.error('Error saving user:', error);
+    try {
+      const docRef = doc(db, 'profiles', id);
+      const snap = await getDoc(docRef);
+      if (!snap.exists()) {
+        await setDoc(docRef, {
+          id,
+          email,
+          balance: 500,
+          equity: 500,
+          paperBalance: 500,
+          paperEquity: 500,
+          realBalance: 0,
+          realEquity: 0,
+          accountType: AccountType.PAPER,
+          createdAt: serverTimestamp()
+        });
+      }
+    } catch (error) {
+      console.error('Error saving user to Firestore:', error);
+    }
   }
 };

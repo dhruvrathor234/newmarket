@@ -269,13 +269,13 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Load data from Supabase when user logs in
+  // Load data from Cloud terminal when user logs in
   useEffect(() => {
     const loadCloudData = async () => {
       if (user && auth.currentUser && isInitialLoad) {
         try {
           const uid = auth.currentUser!.uid;
-          addLog("Connecting to cloud terminal...", "info");
+          addLog("Connecting to secure cloud terminal...", "info");
           
           const [dbBotState, dbTrades, dbLogs] = await Promise.all([
             databaseService.loadBotState(uid),
@@ -295,18 +295,17 @@ const App: React.FC = () => {
           if (dbLogs && dbLogs.length > 0) setLogs(dbLogs);
           
           setIsInitialLoad(false);
-          addLog("Cloud synchronization complete.", "success");
+          addLog("Global cloud synchronization complete.", "success");
         } catch (error) {
-          console.error("Supabase sync error:", error);
-          addLog("Cloud sync link unstable. Retrying...", "warning");
-          // Don't set isInitialLoad to false yet, let it retry or stay local
+          console.error("Cloud sync error:", error);
+          addLog("Cloud link unstable. Operating in localized mode.", "warning");
         }
       }
     };
     loadCloudData();
   }, [user, isInitialLoad, auth.currentUser]);
 
-  // Save data to Supabase (Debounced)
+  // Sync data to Cloud (Debounced)
   useEffect(() => { 
     tradesRef.current = trades; 
     botStateRef.current = botState;
@@ -318,7 +317,7 @@ const App: React.FC = () => {
     storageService.saveBotState(botState);
     storageService.saveLogs(logs);
 
-    // Sync to Supabase if logged in and initial load is done
+    // Sync to Firestore if logged in and initial load is done
     if (user && auth.currentUser && !isInitialLoad) {
       const timeoutId = setTimeout(() => {
         const uid = auth.currentUser!.uid;

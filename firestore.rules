@@ -1,31 +1,10 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: trades
-    // Document ID: auto-generated
-    // Fields:
-    //   - userId: string (required) - UID of the user
-    //   - symbol: string (required) - Trading pair
-    //   - type: string (required) - BUY/SELL
-    //   - profit: number (required) - Realized PnL
-    //   - fees: number (required) - Trading fees
-    //   - timestamp: timestamp (required) - When trade closed
-    //
-    // Collection: user_stats
-    // Document ID: userId
-    // Fields:
-    //   - userId: string (required)
-    //   - totalProfit: number (required)
-    //   - totalFeesOwed: number (required)
-    //   - totalFeesPaid: number (required)
-    //   - amountOwed: number (required)
-    //   - isLocked: bool (required)
-    //
-    // ===============================================================
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
     // Helper Functions
     function isAuthenticated() {
@@ -38,30 +17,42 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          (request.auth.token.email == "aryanad1234567890@gmail.com" && request.auth.token.email_verified == true));
+        request.auth.token.email == "aryanad1234567890@gmail.com" && 
+        request.auth.token.email_verified == true;
+    }
+
+    // User Profiles / Bot State
+    match /profiles/{userId} {
+      allow read, write: if isOwner(userId);
     }
 
     // Trades Collection
     match /trades/{tradeId} {
+      // For create/read/update/delete, check if the document belongs to the user
       allow read: if isOwner(resource.data.userId);
-      allow create: if isOwner(request.resource.data.userId) && 
-                      request.resource.data.keys().hasAll(['userId', 'symbol', 'type', 'profit', 'fees', 'timestamp']);
-      allow update, delete: if false; // Trades are immutable records
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isOwner(resource.data.userId) && isOwner(request.resource.data.userId);
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    // Logs Collection
+    match /logs/{logId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+      allow update, delete: if isOwner(resource.data.userId);
     }
 
     // User Stats Collection
     match /user_stats/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && 
-                      request.resource.data.keys().hasAll(['userId', 'totalProfit', 'totalFeesOwed', 'totalFeesPaid', 'amountOwed', 'isLocked']);
+      allow create: if isOwner(userId);
       allow update: if isOwner(userId) || isAdmin();
     }
 
     // Support Tickets Collection
     match /support_tickets/{ticketId} {
-      allow create: if true; // Allow both anonymous and authenticated users to contact support
-      allow read, update, delete: if isAdmin(); // Only admins can see support requests
+      allow create: if true; 
+      allow read, update, delete: if isAdmin();
     }
   }
 }
