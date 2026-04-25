@@ -3,7 +3,7 @@ import { MarketAnalysis, TradeType, Symbol, EconomicEvent, BacktestScenario } fr
 
 export const fetchEconomicEvents = async (): Promise<EconomicEvent[]> => {
   try {
-    const response = await fetch("/api/ai/economic-events", { method: "POST" });
+    const response = await fetch("/api/ai/economic-events", { method: "GET" });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
       throw new Error(data.error || "Backend error");

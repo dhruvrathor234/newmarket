@@ -273,15 +273,15 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
                                               <span className="text-zinc-400 text-[10px] font-bold uppercase">Ready</span>
                                           </div>
                                       </td>
-                                      <td className="p-6 text-zinc-300 font-bold">{details.bid.toFixed(2)}</td>
-                                      <td className="p-6 text-zinc-300 font-bold">{details.ask.toFixed(2)}</td>
+                                      <td className="p-6 text-zinc-300 font-bold">{(details.bid ?? 0).toFixed(2)}</td>
+                                      <td className="p-6 text-zinc-300 font-bold">{(details.ask ?? 0).toFixed(2)}</td>
                                       <td className="p-6">
-                                          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black ${isPositive ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
-                                              {isPositive ? '▲' : '▼'} {Math.abs(details.change24hPercent).toFixed(2)}%
+                                          <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black ${(details.change24hPercent ?? 0) >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                                              {(details.change24hPercent ?? 0) >= 0 ? '▲' : '▼'} {Math.abs(details.change24hPercent ?? 0).toFixed(2)}%
                                           </div>
                                       </td>
                                       <td className="p-6 text-zinc-500 text-[10px]">
-                                          {details.low.toFixed(1)} <span className="mx-2 opacity-20">|</span> {details.high.toFixed(1)}
+                                          {(details.low ?? 0).toFixed(1)} <span className="mx-2 opacity-20">|</span> {(details.high ?? 0).toFixed(1)}
                                       </td>
                                   </tr>
                               );

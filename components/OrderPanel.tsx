@@ -342,8 +342,11 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                                 <div className="relative">
                                     <input 
                                         type="number" 
-                                        value={quantity} 
-                                        onChange={e => setQuantity(parseFloat(e.target.value))} 
+                                        value={isNaN(quantity) ? '' : quantity} 
+                                        onChange={e => {
+                                            const val = parseFloat(e.target.value);
+                                            setQuantity(isNaN(val) ? 0 : val);
+                                        }} 
                                         className="w-full bg-black/60 border border-white/10 rounded-lg h-12 px-3 text-right text-white font-mono font-bold outline-none focus:border-blue-500/40" 
                                         placeholder="0.00"
                                     />
@@ -464,8 +467,11 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                                         <input 
                                             type="number" 
                                             step="0.01"
-                                            value={limitPrice} 
-                                            onChange={e => setLimitPrice(parseFloat(e.target.value))} 
+                                            value={isNaN(limitPrice) ? '' : limitPrice} 
+                                            onChange={e => {
+                                                const val = parseFloat(e.target.value);
+                                                setLimitPrice(isNaN(val) ? 0 : val);
+                                            }} 
                                             className="w-full bg-black/60 border border-blue-500/30 rounded-lg h-10 px-3 text-white font-mono font-bold text-center outline-none focus:border-blue-500/60 transition-all" 
                                         />
                                         <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500/50 text-[10px] font-mono font-black">$</div>

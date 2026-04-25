@@ -1,23 +1,24 @@
 
 import React, { useState } from 'react';
-import { Sparkles, Search, UserCircle, Menu, X, LayoutDashboard, Terminal, BarChart2, MessageSquare, Briefcase } from 'lucide-react';
+import { Sparkles, Search, UserCircle, Menu, X, LayoutDashboard, Terminal, BarChart2, MessageSquare, Briefcase, Lock } from 'lucide-react';
 import { View } from '../types';
 
 interface NavigationProps {
   currentView: View;
   onNavigate: (view: View) => void;
   userEmail?: string;
+  hasPremiumAccess?: boolean;
   onLogout: () => void;
 }
 
-const Navigation: React.FC<NavigationProps> = ({ currentView, onNavigate, userEmail, onLogout }) => {
+const Navigation: React.FC<NavigationProps> = ({ currentView, onNavigate, userEmail, hasPremiumAccess, onLogout }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const navItems = [
     { id: 'DASHBOARD' as View, label: 'Nebulamarket', icon: LayoutDashboard },
     { id: 'TERMINAL' as View, label: 'Terminal', icon: Terminal },
-    { id: 'INTELLIGENCE' as View, label: 'Analytics', icon: BarChart2 },
-    { id: 'ASSISTANT' as View, label: 'Assistant', icon: MessageSquare },
+    { id: 'INTELLIGENCE' as View, label: 'Analytics', icon: BarChart2, isPremium: true },
+    { id: 'ASSISTANT' as View, label: 'Assistant', icon: MessageSquare, isPremium: true },
     { id: 'PORTFOLIO' as View, label: 'Portfolio', icon: Briefcase },
   ];
 
@@ -50,13 +51,14 @@ const Navigation: React.FC<NavigationProps> = ({ currentView, onNavigate, userEm
                 <button
                   key={item.id}
                   onClick={() => handleNavigate(item.id)}
-                  className={`text-xs font-bold uppercase tracking-widest transition-all duration-300 relative py-1 hover:-translate-y-0.5 ${
+                  className={`text-xs font-bold uppercase tracking-widest transition-all duration-300 relative py-1 hover:-translate-y-0.5 flex items-center gap-1.5 ${
                     currentView === item.id 
                       ? 'text-white' 
                       : 'text-zinc-500 hover:text-white'
                   }`}
                 >
                   {item.label}
+                  {item.isPremium && !hasPremiumAccess && <Lock size={10} className="text-blue-500/50" />}
                   {currentView === item.id && (
                     <div className="absolute -bottom-1 left-0 w-full h-0.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)]"></div>
                   )}
@@ -135,7 +137,10 @@ const Navigation: React.FC<NavigationProps> = ({ currentView, onNavigate, userEm
                 }`}
               >
                 <item.icon size={18} />
-                <span className="text-xs font-bold uppercase tracking-widest">{item.label}</span>
+                <span className="text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                  {item.label}
+                  {item.isPremium && !hasPremiumAccess && <Lock size={12} className="opacity-40" />}
+                </span>
               </button>
             ))}
             

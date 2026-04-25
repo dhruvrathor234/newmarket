@@ -42,8 +42,8 @@ const PortfolioTradeRow: React.FC<{
             <td className="p-3 font-bold text-white font-mono sticky left-0 bg-[#0b0c10] z-10">{trade.symbol}</td>
             <td className={`p-3 font-bold ${trade.type === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>{trade.type}</td>
             <td className="p-3 text-right text-slate-300 font-mono">{trade.lotSize}</td>
-            <td className="p-3 text-right text-slate-300 font-mono">{trade.entryPrice.toFixed(2)}</td>
-            <td className="p-3 text-right text-slate-200 font-mono">{currentPrice.toFixed(2)}</td>
+            <td className="p-3 text-right text-slate-300 font-mono">{(trade.entryPrice || 0).toFixed(2)}</td>
+            <td className="p-3 text-right text-slate-200 font-mono">{(currentPrice || 0).toFixed(2)}</td>
             
             <td className="p-3 text-right font-mono text-slate-300">
                 {isEditing ? (
@@ -53,7 +53,7 @@ const PortfolioTradeRow: React.FC<{
                       className="w-20 bg-black/50 border border-rose-500/50 rounded px-1 py-0.5 text-right text-xs focus:outline-none focus:border-rose-400 text-rose-300" 
                    />
                 ) : (
-                    <span className="text-rose-400/80">{trade.stopLoss.toFixed(2)}</span>
+                    <span className="text-rose-400/80">{(trade.stopLoss || 0).toFixed(2)}</span>
                 )}
             </td>
 
@@ -65,7 +65,7 @@ const PortfolioTradeRow: React.FC<{
                       className="w-20 bg-black/50 border border-emerald-500/50 rounded px-1 py-0.5 text-right text-xs focus:outline-none focus:border-emerald-400 text-emerald-300" 
                    />
                 ) : (
-                    <span className="text-emerald-400/80">{trade.takeProfit?.toFixed(2) || '-'}</span>
+                    <span className="text-emerald-400/80">{trade.takeProfit ? trade.takeProfit.toFixed(2) : '-'}</span>
                 )}
             </td>
 
@@ -276,10 +276,10 @@ const PortfolioView: React.FC<PortfolioViewProps> = ({ trades, prices, onCloseTr
                                       <td className="p-3 font-bold text-white sticky left-0 bg-[#0b0c10] z-10">{trade.symbol}</td>
                                       <td className={`p-3 font-bold ${trade.type === 'BUY' ? 'text-emerald-400' : 'text-rose-400'}`}>{trade.type}</td>
                                       <td className="p-3 text-right text-slate-300">{trade.lotSize}</td>
-                                      <td className="p-3 text-right text-slate-300">{trade.entryPrice.toFixed(2)}</td>
-                                      <td className="p-3 text-right text-slate-300">{trade.closePrice?.toFixed(2)}</td>
+                                      <td className="p-3 text-right text-slate-300">{(trade.entryPrice || 0).toFixed(2)}</td>
+                                      <td className="p-3 text-right text-slate-300">{(trade.closePrice || 0).toFixed(2)}</td>
                                       <td className={`p-3 text-right font-bold ${(trade.pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                          {trade.pnl && trade.pnl >= 0 ? '+' : ''}{(trade.pnl || 0).toFixed(2)}
+                                          {(trade.pnl || 0) >= 0 ? '+' : ''}{(trade.pnl || 0).toFixed(2)}
                                       </td>
                                   </tr>
                               ))

@@ -17,7 +17,11 @@ const CustomEconomicCalendar: React.FC = () => {
       setEvents(data);
     } catch (e: any) {
       console.error(e);
-      setError(e.message || "Failed to sync with neural core.");
+      let msg = e.message || "Failed to sync with neural core.";
+      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+        msg = "AI Quota Exceeded. The neural core is cooling down, please try again in a few minutes.";
+      }
+      setError(msg);
     } finally {
       setIsLoading(false);
     }

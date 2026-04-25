@@ -3,6 +3,23 @@ import { db } from '../firebase';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc, writeBatch, serverTimestamp, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { Trade, BotState, TradingMode, AccountType, TradeType, Symbol } from '../types';
 
+// Sanitizer to convert undefined values to null for Firestore
+const sanitize = (data: any): any => {
+  if (data === undefined) return null;
+  if (data === null) return null;
+  if (Array.isArray(data)) return data.map(sanitize);
+  if (typeof data === 'object') {
+    const clean: any = {};
+    for (const key in data) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        clean[key] = sanitize(data[key]);
+      }
+    }
+    return clean;
+  }
+  return data;
+};
+
 export const databaseService = {
   // --- REAL-TIME SUBSCRIPTIONS ---
   subscribeToBotState(userId: string, callback: (state: BotState) => void) {
@@ -11,26 +28,29 @@ export const databaseService = {
       if (snap.exists()) {
         const data = snap.data();
         callback({
-          isRunning: data.isRunning,
-          strategy: data.strategy,
-          balance: data.balance,
-          equity: data.equity,
-          paperBalance: data.paperBalance ?? data.balance,
-          paperEquity: data.paperEquity ?? data.equity,
-          realBalance: data.realBalance ?? data.balance,
-          realEquity: data.realEquity ?? data.equity,
-          lastRunTime: data.lastRunTime,
-          statusMessage: data.statusMessage,
-          customLogic: data.customLogic,
+          isRunning: data.isRunning ?? false,
+          strategy: data.strategy ?? 'NEBULA_V5',
+          balance: data.balance ?? 500,
+          equity: data.equity ?? 500,
+          paperBalance: data.paperBalance ?? data.balance ?? 500,
+          paperEquity: data.paperEquity ?? data.equity ?? 500,
+          realBalance: data.realBalance ?? 0,
+          realEquity: data.realEquity ?? 0,
+          lastRunTime: data.lastRunTime ?? null,
+          statusMessage: data.statusMessage ?? '',
+          customLogic: data.customLogic ?? '',
           accountType: (data.accountType as AccountType) || AccountType.PAPER,
           tradingMode: (data.tradingMode as TradingMode) || TradingMode.SPOT,
           binanceApiKey: '',
           binanceApiSecret: '',
-          isBinanceConnected: false
+          isBinanceConnected: false,
+          hasPremiumAccess: data.hasPremiumAccess ?? false
         });
       }
     }, (error) => {
-      console.error("Error subscribing to bot state:", error);
+      if (!error.message?.includes('offline')) {
+        console.error("Error subscribing to bot state:", error);
+      }
     });
   },
 
@@ -44,24 +64,26 @@ export const databaseService = {
           id: doc.id,
           symbol: data.symbol as Symbol,
           type: data.type as TradeType,
-          entryPrice: data.entryPrice,
-          limitPrice: data.limitPrice,
-          closePrice: data.closePrice,
-          lotSize: data.lotSize,
-          stopLoss: data.stopLoss,
-          takeProfit: data.takeProfit,
-          riskPercentage: data.riskPercentage,
-          pnl: data.pnl,
-          openTime: data.openTime,
-          closeTime: data.closeTime,
+          entryPrice: data.entryPrice || 0,
+          limitPrice: data.limitPrice || null,
+          closePrice: data.closePrice || null,
+          lotSize: data.lotSize || 0,
+          stopLoss: data.stopLoss || null,
+          takeProfit: data.takeProfit || null,
+          riskPercentage: data.riskPercentage || 0,
+          pnl: data.pnl || 0,
+          openTime: data.openTime || Date.now(),
+          closeTime: data.closeTime || null,
           status: data.status as 'OPEN' | 'CLOSED' | 'PENDING',
           accountType: data.accountType as AccountType,
-          binanceOrderId: data.binanceOrderId
+          binanceOrderId: data.binanceOrderId || null
         };
       });
       callback(trades);
     }, (error) => {
-      console.error("Error subscribing to trades:", error);
+      if (!error.message?.includes('offline')) {
+        console.error("Error subscribing to trades:", error);
+      }
     });
   },
 
@@ -69,7 +91,7 @@ export const databaseService = {
   async saveBotState(userId: string, state: BotState) {
     try {
       const docRef = doc(db, 'profiles', userId);
-      await setDoc(docRef, {
+      const data = sanitize({
         balance: state.balance,
         equity: state.equity,
         strategy: state.strategy,
@@ -83,8 +105,10 @@ export const databaseService = {
         realEquity: state.realEquity,
         accountType: state.accountType,
         tradingMode: state.tradingMode,
+        hasPremiumAccess: state.hasPremiumAccess,
         updatedAt: serverTimestamp()
-      }, { merge: true });
+      });
+      await setDoc(docRef, data, { merge: true });
     } catch (error) {
       console.error('Error saving bot state to Firestore:', error);
     }
@@ -99,25 +123,28 @@ export const databaseService = {
       const data = snap.data();
       
       return {
-        isRunning: data.isRunning,
-        strategy: data.strategy,
-        balance: data.balance,
-        equity: data.equity,
-        paperBalance: data.paperBalance ?? data.balance,
-        paperEquity: data.paperEquity ?? data.equity,
-        realBalance: data.realBalance ?? data.balance,
-        realEquity: data.realEquity ?? data.equity,
-        lastRunTime: data.lastRunTime,
-        statusMessage: data.statusMessage,
-        customLogic: data.customLogic,
+        isRunning: data.isRunning ?? false,
+        strategy: data.strategy ?? 'NEBULA_V5',
+        balance: data.balance ?? 500,
+        equity: data.equity ?? 500,
+        paperBalance: data.paperBalance ?? data.balance ?? 500,
+        paperEquity: data.paperEquity ?? data.equity ?? 500,
+        realBalance: data.realBalance ?? 0,
+        realEquity: data.realEquity ?? 0,
+        lastRunTime: data.lastRunTime ?? null,
+        statusMessage: data.statusMessage ?? '',
+        customLogic: data.customLogic ?? '',
         accountType: (data.accountType as AccountType) || AccountType.PAPER,
         tradingMode: (data.tradingMode as TradingMode) || TradingMode.SPOT,
         binanceApiKey: '',
         binanceApiSecret: '',
-        isBinanceConnected: false
+        isBinanceConnected: false,
+        hasPremiumAccess: data.hasPremiumAccess ?? false
       };
-    } catch (error) {
-      console.error('Error loading bot state from Firestore:', error);
+    } catch (error: any) {
+      if (!error.message?.includes('offline')) {
+        console.error('Error loading bot state from Firestore:', error);
+      }
       return null;
     }
   },
@@ -128,15 +155,14 @@ export const databaseService = {
     try {
       const batch = writeBatch(db);
       
-      // We only sync recent or relevant trades to avoid hitting limits if there are thousands
-      // For this app, we'll sync the ones provided
       trades.forEach(t => {
         const tradeRef = doc(db, 'trades', t.id);
-        batch.set(tradeRef, {
+        const data = sanitize({
           ...t,
           userId,
           updatedAt: serverTimestamp()
-        }, { merge: true });
+        });
+        batch.set(tradeRef, data, { merge: true });
       });
 
       await batch.commit();
@@ -157,23 +183,25 @@ export const databaseService = {
           id: doc.id,
           symbol: data.symbol as Symbol,
           type: data.type as TradeType,
-          entryPrice: data.entryPrice,
-          limitPrice: data.limitPrice,
-          closePrice: data.closePrice,
-          lotSize: data.lotSize,
-          stopLoss: data.stopLoss,
-          takeProfit: data.takeProfit,
-          riskPercentage: data.riskPercentage,
-          pnl: data.pnl,
-          openTime: data.openTime,
-          closeTime: data.closeTime,
+          entryPrice: data.entryPrice || 0,
+          limitPrice: data.limitPrice || null,
+          closePrice: data.closePrice || null,
+          lotSize: data.lotSize || 0,
+          stopLoss: data.stopLoss || null,
+          takeProfit: data.takeProfit || null,
+          riskPercentage: data.riskPercentage || 0,
+          pnl: data.pnl || 0,
+          openTime: data.openTime || Date.now(),
+          closeTime: data.closeTime || null,
           status: data.status as 'OPEN' | 'CLOSED' | 'PENDING',
           accountType: data.accountType as AccountType,
-          binanceOrderId: data.binanceOrderId
+          binanceOrderId: data.binanceOrderId || null
         };
       });
-    } catch (error) {
-      console.error('Error loading trades from Firestore:', error);
+    } catch (error: any) {
+      if (!error.message?.includes('offline')) {
+        console.error('Error loading trades from Firestore:', error);
+      }
       return [];
     }
   },
@@ -182,17 +210,17 @@ export const databaseService = {
   async saveLogs(userId: string, logs: any[]) {
     if (!logs || logs.length === 0) return;
     try {
-      // Logs are usually high volume, we might want to cap them
-      const recentLogs = logs.slice(-20); // Only sync last 20 logs to cloud
+      const recentLogs = logs.slice(-20); 
       const batch = writeBatch(db);
       
       recentLogs.forEach(log => {
         const logRef = doc(db, 'logs', log.id);
-        batch.set(logRef, {
+        const data = sanitize({
           ...log,
           userId,
           createdAt: serverTimestamp()
-        }, { merge: true });
+        });
+        batch.set(logRef, data, { merge: true });
       });
 
       await batch.commit();
@@ -211,13 +239,15 @@ export const databaseService = {
         const data = doc.data();
         return {
           id: doc.id,
-          time: data.time,
-          message: data.message,
-          type: data.type
+          time: data.time || '',
+          message: data.message || '',
+          type: data.type || 'info'
         };
       }).reverse();
-    } catch (error) {
-      console.error('Error loading logs from Firestore:', error);
+    } catch (error: any) {
+      if (!error.message?.includes('offline')) {
+        console.error('Error loading logs from Firestore:', error);
+      }
       return [];
     }
   },
@@ -227,9 +257,10 @@ export const databaseService = {
     try {
       const docRef = doc(db, 'profiles', userId);
       await updateDoc(docRef, { balance: newBalance });
-    } catch (error) {
-       // Profile might not exist yet if called early
-       console.warn('Update balance failed, profile might not exist');
+    } catch (error: any) {
+       if (!error.message?.includes('offline')) {
+        console.warn('Update balance failed, profile might not exist');
+       }
     }
   },
 
@@ -238,7 +269,7 @@ export const databaseService = {
       const docRef = doc(db, 'profiles', id);
       const snap = await getDoc(docRef);
       if (!snap.exists()) {
-        await setDoc(docRef, {
+        const data = sanitize({
           id,
           email,
           balance: 500,
@@ -248,11 +279,28 @@ export const databaseService = {
           realBalance: 0,
           realEquity: 0,
           accountType: AccountType.PAPER,
+          hasPremiumAccess: false,
           createdAt: serverTimestamp()
         });
+        await setDoc(docRef, data);
       }
-    } catch (error) {
-      console.error('Error saving user to Firestore:', error);
+    } catch (error: any) {
+      if (!error.message?.includes('offline')) {
+        console.error('Error saving user to Firestore:', error);
+      }
+    }
+  },
+
+  async setPremiumAccess(userId: string, status: boolean) {
+    try {
+      const docRef = doc(db, 'profiles', userId);
+      await updateDoc(docRef, { hasPremiumAccess: status });
+      
+      // Also update user_stats for redundancy if it exists
+      const statsRef = doc(db, 'user_stats', userId);
+      await updateDoc(statsRef, { hasPremiumAccess: status }).catch(() => {});
+    } catch (error: any) {
+      console.error('Error updating premium status:', error);
     }
   }
 };

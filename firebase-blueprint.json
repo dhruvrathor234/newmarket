@@ -1,52 +1,68 @@
 {
   "entities": {
-    "UserProfile": {
-      "title": "User Profile",
-      "description": "Stores user balance, equity, and bot configuration",
+    "UserStats": {
+      "title": "User Stats",
+      "description": "Aggregated stats and balance for a user",
       "type": "object",
       "properties": {
-        "userId": { "type": "string" },
-        "email": { "type": "string" },
-        "balance": { "type": "number" },
-        "equity": { "type": "number" },
-        "strategy": { "type": "string" },
-        "isRunning": { "type": "boolean" },
+        "balance": { "type": "number", "description": "Current wallet balance" },
+        "equity": { "type": "number", "description": "Current equity including open PnL" },
+        "totalProfit": { "type": "number", "description": "Lifetime realized profit" },
+        "totalTrades": { "type": "number", "description": "Total count of closed trades" },
+        "winRate": { "type": "number", "description": "Percentage of winning trades" },
+        "lastUpdated": { "type": "number", "description": "Last sync timestamp" },
         "accountType": { "type": "string", "enum": ["PAPER", "REAL"] },
-        "tradingMode": { "type": "string", "enum": ["SPOT", "FUTURES"] },
-        "statusMessage": { "type": "string" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "hasPremiumAccess": { "type": "boolean", "description": "Whether user has paid for Analytics and Assistant" }
       },
-      "required": ["userId", "balance", "equity"]
+      "required": ["balance", "lastUpdated"]
     },
     "Trade": {
-      "title": "Trading Position",
-      "description": "Stores details of an open or closed trade",
+      "title": "Trade",
+      "description": "A single trading position record",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
-        "userId": { "type": "string" },
         "symbol": { "type": "string" },
         "type": { "type": "string", "enum": ["BUY", "SELL"] },
-        "status": { "type": "string", "enum": ["OPEN", "CLOSED", "PENDING"] },
+        "lotSize": { "type": "number" },
         "entryPrice": { "type": "number" },
         "closePrice": { "type": "number" },
-        "pnl": { "type": "number" },
-        "lotSize": { "type": "number" },
         "openTime": { "type": "number" },
         "closeTime": { "type": "number" },
-        "accountType": { "type": "string" }
-      },
-      "required": ["userId", "symbol", "type", "status", "entryPrice"]
+        "stopLoss": { "type": "number" },
+        "takeProfit": { "type": "number" },
+        "pnl": { "type": "number" },
+        "status": { "type": "string", "enum": ["OPEN", "CLOSED"] },
+        "accountType": { "type": "string", "enum": ["PAPER", "REAL"] }
+      }
+    },
+    "SupportTicket": {
+      "title": "Support Ticket",
+      "description": "User message for the support team",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "subject": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["OPEN", "CLOSED"] },
+        "createdAt": { "type": "object", "description": "Firestore Server Timestamp" },
+        "recipient": { "type": "string" }
+      }
     }
   },
   "firestore": {
-    "/profiles/{userId}": {
-      "schema": "UserProfile",
-      "description": "Individual user financial state and bot settings"
+    "/users/{userId}": {
+      "schema": "UserStats",
+      "description": "Public user stats and active balance"
     },
-    "/trades/{tradeId}": {
+    "/users/{userId}/trades/{tradeId}": {
       "schema": "Trade",
-      "description": "Individual trades linked to a userId"
+      "description": "Trade history and open positions for the user"
+    },
+    "/support_tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "End-to-end encrypted support transmissions"
     }
   }
 }

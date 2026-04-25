@@ -11,6 +11,7 @@ import PortfolioView from './components/views/PortfolioView';
 import IntelligenceView from './components/views/IntelligenceView';
 import AssistantView from './components/views/AssistantView';
 import ProfileView from './components/views/ProfileView';
+import PremiumAccessGate from './components/PremiumAccessGate';
 
 import { BotState, Trade, TradeType, RiskSettings, Symbol, View, MarketDetails, Alert, NebulaV5Settings, MarketAnalysis, AccountType, TradingMode, HedgingBotSettings, HFTBotSettings, UserStats, Candle } from './types';
 import { INITIAL_BALANCE, ASSETS, CRON_INTERVAL_MS } from './constants';
@@ -189,6 +190,39 @@ const App: React.FC = () => {
     return () => window.removeEventListener('error', handleGlobalError);
   }, []);
 
+  // Handle Cashfree Payment verification return
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const orderId = urlParams.get('order_id');
+    const status = urlParams.get('status');
+
+    if (orderId && status === 'verify' && auth.currentUser) {
+      const verifyPayment = async () => {
+        addLog(`Verifying payment order ${orderId}...`, 'info');
+        try {
+          const response = await fetch('/api/payments/verify-payment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ order_id: orderId })
+          });
+          const data = await response.json();
+          if (data.status === 'SUCCESS') {
+            await databaseService.setPremiumAccess(auth.currentUser!.uid, true);
+            addLog("Intelligence Subroutines Primed. Premium Access Active.", "success");
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+          } else {
+            addLog(`Payment verification failed: ${data.message || 'Unknown error'}`, 'warning');
+          }
+        } catch (err) {
+          console.error("Verification error:", err);
+          addLog("Payment verification failed. Please contact support.", "error");
+        }
+      };
+      verifyPayment();
+    }
+  }, [user]);
+
   useEffect(() => {
     let unsubStats: (() => void) | null = null;
 
@@ -211,6 +245,7 @@ const App: React.FC = () => {
               totalFeesPaid: 0,
               amountOwed: 0,
               isLocked: false,
+              hasPremiumAccess: false,
               lastUpdated: Date.now()
             };
             await setDoc(statsRef, initialStats);
@@ -503,7 +538,8 @@ const App: React.FC = () => {
         binanceOrderId
     };
     setTrades(prev => [...prev, newTrade]);
-    addLog(`Order Placed: ${tradeType} ${lots} lot ${sym} @ ${fillPrice.toFixed(2)}`, 'info');
+    const safePrice = (fillPrice || 0).toFixed(2);
+    addLog(`Order Placed: ${tradeType} ${lots} lot ${sym} @ ${safePrice}`, 'info');
     
     // Sync immediately to cloud
     if (user && auth.currentUser) {
@@ -566,10 +602,10 @@ const App: React.FC = () => {
         };
       });
       
-      addLog(`Position Closed: ${t.symbol} ${t.type} | PnL: $${realizedPnL.toFixed(2)}`, realizedPnL >= 0 ? 'success' : 'warning');
+      addLog(`Position Closed: ${t.symbol} ${t.type} | PnL: $${(realizedPnL || 0).toFixed(2)}`, (realizedPnL || 0) >= 0 ? 'success' : 'warning');
       
-      const updatedTrade = { ...t, status: 'CLOSED' as const, closeTime: Date.now(), closePrice, pnl: realizedPnL };
-      recordTradeToFirestore(updatedTrade, realizedPnL);
+      const updatedTrade = { ...t, status: 'CLOSED' as const, closeTime: Date.now(), closePrice, pnl: realizedPnL || 0 };
+      recordTradeToFirestore(updatedTrade, realizedPnL || 0);
 
       return prev.map(x => x.id === tradeId ? updatedTrade : x);
     });
@@ -1023,6 +1059,7 @@ const App: React.FC = () => {
         currentView={currentView} 
         onNavigate={handleNavigate} 
         userEmail={user?.email} 
+        hasPremiumAccess={!!botState.hasPremiumAccess}
         onLogout={handleLogout} 
       />
       
@@ -1089,11 +1126,15 @@ const App: React.FC = () => {
         </div>
 
         <div className={currentView === 'INTELLIGENCE' ? 'block' : 'hidden'}>
-          <IntelligenceView activeSymbol={activeSymbol} analysis={lastAnalysis} isAnalyzing={isAnalyzing} onAnalyze={triggerAnalysis} logs={logs} activeStrategy={botState.strategy} />
+          <PremiumAccessGate hasAccess={!!botState.hasPremiumAccess} title="Intelligence View" description="Real-time sentiment and technical analysis.">
+            <IntelligenceView activeSymbol={activeSymbol} analysis={lastAnalysis} isAnalyzing={isAnalyzing} onAnalyze={triggerAnalysis} logs={logs} activeStrategy={botState.strategy} />
+          </PremiumAccessGate>
         </div>
 
         <div className={currentView === 'ASSISTANT' ? 'block' : 'hidden'}>
-          <AssistantView activeSymbol={activeSymbol} marketDetails={marketDetails[activeSymbol]} />
+          <PremiumAccessGate hasAccess={!!botState.hasPremiumAccess} title="AI Assistant" description="Personal AI trading companion.">
+            <AssistantView activeSymbol={activeSymbol} marketDetails={marketDetails[activeSymbol]} />
+          </PremiumAccessGate>
         </div>
 
         <div className={currentView === 'PROFILE' ? 'block' : 'hidden'}>

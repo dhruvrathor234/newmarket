@@ -87,23 +87,23 @@ const BacktestEngine: React.FC<BacktestEngineProps> = ({
     doc.text('Performance Summary', 18, 68);
     
     doc.setFontSize(10);
-    doc.text(`Net Profit: ${report.netProfit.toFixed(2)} USD`, 18, 76);
-    doc.text(`Win Rate: ${report.winRate.toFixed(1)}%`, 18, 82);
-    doc.text(`Profit Factor: ${report.profitFactor.toFixed(2)}`, 18, 88);
-    doc.text(`Max Drawdown: ${report.maxDrawdown.toFixed(2)}%`, 18, 94);
+    doc.text(`Net Profit: ${(report.netProfit || 0).toFixed(2)} USD`, 18, 76);
+    doc.text(`Win Rate: ${(report.winRate || 0).toFixed(1)}%`, 18, 82);
+    doc.text(`Profit Factor: ${(report.profitFactor || 0).toFixed(2)}`, 18, 88);
+    doc.text(`Max Drawdown: ${(report.maxDrawdown || 0).toFixed(2)}%`, 18, 94);
     
-    doc.text(`Total Trades: ${report.totalTrades}`, 100, 76);
-    doc.text(`Avg. Trade profit: ${report.avgTrade.toFixed(2)} USD`, 100, 82);
+    doc.text(`Total Trades: ${report.totalTrades || 0}`, 100, 76);
+    doc.text(`Avg. Trade profit: ${(report.avgTrade || 0).toFixed(2)} USD`, 100, 82);
     doc.text(`Wins: ${report.trades.filter(t => t.status === 'WIN').length}`, 100, 88);
     doc.text(`Losses: ${report.trades.filter(t => t.status === 'LOSS').length}`, 100, 94);
 
     // Trade History Table
     const tableData = report.trades.map(trade => [
       trade.type,
-      trade.entryPrice.toFixed(2),
-      trade.exitPrice.toFixed(2),
-      `${trade.pnl >= 0 ? '+' : ''}${trade.pnl.toFixed(2)}`,
-      `${trade.pnlPercentage >= 0 ? '+' : ''}${trade.pnlPercentage.toFixed(2)}%`,
+      (trade.entryPrice || 0).toFixed(2),
+      (trade.exitPrice || 0).toFixed(2),
+      `${(trade.pnl || 0) >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)}`,
+      `${(trade.pnlPercentage || 0) >= 0 ? '+' : ''}${(trade.pnlPercentage || 0).toFixed(2)}%`,
       trade.status
     ]);
 

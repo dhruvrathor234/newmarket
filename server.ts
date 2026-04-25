@@ -5,6 +5,8 @@ import { createServer as createViteServer } from "vite";
 import BinanceFactory from 'binance-api-node';
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from 'dotenv';
+import crypto from 'crypto';
+import axios from 'axios';
 
 dotenv.config({ override: true });
 
@@ -50,7 +52,7 @@ const cache: Record<string, { data: any, timestamp: number, ttl: number }> = {
   }
 };
 
-const withRetry = async (fn: () => Promise<any>, retries = 2, delay = 1000) => {
+const withRetry = async (fn: () => Promise<any>, retries = 3, delay = 2000) => {
   for (let i = 0; i <= retries; i++) {
     try {
       return await fn();
@@ -243,18 +245,18 @@ app.post("/api/binance/order", async (req, res) => {
 
 // --- GEMINI AI ENDPOINTS ---
 
-app.post("/api/ai/economic-events", async (req, res) => {
-  if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) {
-    return res.status(500).json({ error: "Neural core offline." });
-  }
+app.get("/api/ai/economic-events", async (req, res) => {
   const now = Date.now();
   if (cache.economicEvents.data && (now - cache.economicEvents.timestamp < cache.economicEvents.ttl)) {
     return res.json(cache.economicEvents.data);
   }
+  if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) {
+    return res.status(500).json({ error: "Neural core offline." });
+  }
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   try {
     const response = await withRetry(() => ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: "List the top 10 most critical global economic events for this week (USD, EUR, GBP).",
       config: {
         tools: [{ googleSearch: {} }],
@@ -282,13 +284,7 @@ app.post("/api/ai/economic-events", async (req, res) => {
     res.json(events);
   } catch (error: any) {
     console.error("[Neural Core] Economic Events Error:", error);
-    if (error.message?.includes("leaked")) {
-      return res.status(403).json({ 
-        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
-        details: error.message
-      });
-    }
-    res.status(500).json({ error: error.message });
+    res.status(error.message?.includes("429") ? 429 : 500).json({ error: error.message });
   }
 });
 
@@ -305,7 +301,7 @@ app.post("/api/ai/analyze-market", async (req, res) => {
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   try {
     const response = await withRetry(() => ai.models.generateContent({ 
-      model: "gemini-3-flash-preview", 
+      model: "gemini-2.0-flash", 
       contents: `Analyze ${symbol} market news and sentiment. Provide technical and fundamental insights.`, 
       config: { tools: [{ googleSearch: {} }] } 
     }));
@@ -336,21 +332,15 @@ app.post("/api/ai/evaluate-logic", async (req, res) => {
   if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   try {
-    const response = await ai.models.generateContent({ 
-      model: "gemini-3-flash-preview", 
+    const response = await withRetry(() => ai.models.generateContent({ 
+      model: "gemini-2.0-flash", 
       contents: `Evaluate logic: ${logic} for ${symbol} at ${price}`,
       config: { responseMimeType: "application/json" }
-    });
+    }));
     res.json(JSON.parse(response.text || "{}"));
   } catch (error: any) {
     console.error("[Neural Core] Logic Evaluation Error:", error);
-    if (error.message?.includes("leaked")) {
-      return res.status(403).json({ 
-        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
-        details: error.message
-      });
-    }
-    res.status(500).json({ error: error.message });
+    res.status(error.message?.includes("429") ? 429 : 500).json({ error: error.message });
   }
 });
 
@@ -364,7 +354,7 @@ app.post("/api/ai/chat", async (req, res) => {
   parts.push({ text: `Context: ${contextData}\n\nUser: ${message}` });
   try {
     const response = await withRetry(() => ai.models.generateContent({ 
-      model: "gemini-3-flash-preview", 
+      model: "gemini-2.0-flash", 
       contents: { parts }, 
       config: { tools: [{ googleSearch: {} }] } 
     }));
@@ -386,8 +376,8 @@ app.post("/api/ai/verify-identity", async (req, res) => {
   if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   try {
-    const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+    const response = await withRetry(() => ai.models.generateContent({
+      model: "gemini-2.0-flash",
       contents: {
         parts: [
           { inlineData: { data: frontBase64.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, ""), mimeType: "image/png" } },
@@ -396,17 +386,11 @@ app.post("/api/ai/verify-identity", async (req, res) => {
         ]
       },
       config: { responseMimeType: "application/json" }
-    });
+    }));
     res.json(JSON.parse(response.text || "{}"));
   } catch (error: any) {
     console.error("[Neural Core] Identity Verification Error:", error);
-    if (error.message?.includes("leaked")) {
-      return res.status(403).json({ 
-        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
-        details: error.message
-      });
-    }
-    res.status(500).json({ error: error.message });
+    res.status(error.message?.includes("429") ? 429 : 500).json({ error: error.message });
   }
 });
 
@@ -415,7 +399,7 @@ app.post("/api/ai/backtest-data", async (req, res) => {
   const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.0-flash",
       contents: "Generate 10 backtest scenarios.",
       config: { responseMimeType: "application/json" }
     });
@@ -429,6 +413,102 @@ app.post("/api/ai/backtest-data", async (req, res) => {
       });
     }
     res.status(500).json({ error: error.message });
+  }
+});
+
+// --- CASHFREE SETUP ---
+const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID;
+const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY;
+const CASHFREE_BASE_URL = (process.env.CASHFREE_ENV || 'sandbox') === 'production' 
+  ? 'https://api.cashfree.com/pg' 
+  : 'https://sandbox.cashfree.com/pg';
+
+if (CASHFREE_APP_ID && CASHFREE_SECRET_KEY) {
+  console.log(`[Payments] Cashfree initialized in ${process.env.CASHFREE_ENV || 'sandbox'} mode.`);
+} else {
+  console.warn("[Payments] Cashfree credentials missing. Payments will be simulated or fail.");
+}
+
+// --- PAYMENT ENDPOINTS ---
+
+app.post("/api/payments/create-order", async (req, res) => {
+  const { userId, userEmail, userName, userPhone } = req.body;
+  
+  if (!userId) {
+    return res.status(400).json({ error: "Missing userId" });
+  }
+
+  // Preflight check for credentials
+  if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
+    return res.json({
+      payment_session_id: "dev_session_" + Date.now(),
+      order_id: "dev_order_" + Date.now(),
+      is_simulated: true
+    });
+  }
+
+  try {
+    const response = await axios.post(`${CASHFREE_BASE_URL}/orders`, {
+      order_amount: 1.00,
+      order_currency: "INR",
+      order_id: `order_${userId}_${Date.now()}`,
+      customer_details: {
+        customer_id: userId,
+        customer_phone: userPhone || "9999999999",
+        customer_name: userName || "Nebula User",
+        customer_email: userEmail || "user@example.com"
+      },
+      order_meta: {
+        return_url: `${req.headers.origin}/?order_id={order_id}&status=verify`,
+      },
+      order_note: "Premium Access: Analytics & Assistant"
+    }, {
+      headers: {
+        'x-client-id': CASHFREE_APP_ID,
+        'x-client-secret': CASHFREE_SECRET_KEY,
+        'x-api-version': '2023-08-01',
+        'Content-Type': 'application/json'
+      }
+    });
+
+    res.json(response.data);
+  } catch (error: any) {
+    console.error("[Payments] Create Order Error:", error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data?.message || "Failed to create order" });
+  }
+});
+
+app.post("/api/payments/verify-payment", async (req, res) => {
+  const { order_id } = req.body;
+  
+  if (!order_id) {
+    return res.status(400).json({ error: "Missing order_id" });
+  }
+
+  if (order_id.startsWith("dev_order_")) {
+    return res.json({ status: "SUCCESS", simulated: true });
+  }
+
+  try {
+    const response = await axios.get(`${CASHFREE_BASE_URL}/orders/${order_id}/payments`, {
+      headers: {
+        'x-client-id': CASHFREE_APP_ID,
+        'x-client-secret': CASHFREE_SECRET_KEY,
+        'x-api-version': '2023-08-01'
+      }
+    });
+    
+    const payments = response.data;
+    const successPayment = Array.isArray(payments) ? payments.find((p: any) => p.payment_status === "SUCCESS") : null;
+    
+    if (successPayment) {
+      res.json({ status: "SUCCESS", payment: successPayment });
+    } else {
+      res.json({ status: "PENDING", message: "No successful payment found" });
+    }
+  } catch (error: any) {
+    console.error("[Payments] Verify Payment Error:", error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data?.message || "Verification failed" });
   }
 });
 

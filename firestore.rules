@@ -1,74 +1,111 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default deny
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Helper Functions
-    function isAuthenticated() {
+    // -------------------------------------------------------------------------
+    // GLOBAL HELPERS
+    // -------------------------------------------------------------------------
+    function isSignedIn() {
       return request.auth != null;
     }
 
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Profile Validation
-    function isValidProfile(data) {
-      return data.keys().hasAll(['userId', 'balance', 'equity']) &&
-             data.userId == request.auth.uid &&
-             data.balance is number &&
-             data.equity is number;
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
     }
 
-    // Trade Validation
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // -------------------------------------------------------------------------
+    // VALIDATION BLUEPRINTS
+    // -------------------------------------------------------------------------
+    
+    function isValidUserStats(data) {
+      return data.keys().hasAll(['balance', 'lastUpdated']) &&
+             data.balance is number &&
+             data.lastUpdated is number;
+    }
+
     function isValidTrade(data) {
-      return data.userId == request.auth.uid &&
+      return data.keys().hasAll(['id', 'symbol', 'type', 'lotSize', 'entryPrice', 'openTime', 'status', 'accountType']) &&
+             data.id is string &&
              data.symbol is string &&
              data.type in ['BUY', 'SELL'] &&
-             data.status in ['OPEN', 'CLOSED', 'PENDING'] &&
+             data.lotSize is number &&
              data.entryPrice is number &&
-             data.lotSize is number;
+             data.openTime is number &&
+             data.status in ['OPEN', 'CLOSED'] &&
+             data.accountType in ['PAPER', 'REAL'];
     }
 
-    // User Profiles
-    match /profiles/{userId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && isValidProfile(request.resource.data);
-      allow update: if isOwner(userId) && isValidProfile(request.resource.data);
+    function isValidSupportTicket(data) {
+      return data.keys().hasAll(['userId', 'userEmail', 'subject', 'message', 'status', 'createdAt', 'recipient']) &&
+             data.userId is string &&
+             data.userEmail is string &&
+             data.subject is string &&
+             data.message is string &&
+             data.status == 'OPEN' &&
+             data.recipient == 'nebulamarketai@gmail.com';
     }
 
-    // Trades Collection (Flat collection with userId indexing)
-    match /trades/{tradeId} {
-      allow read: if isAuthenticated() && (resource == null || resource.data.userId == request.auth.uid);
-      allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && isValidTrade(request.resource.data);
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && isValidTrade(request.resource.data);
-      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
-    }
-
-    // Logs Collection
-    match /logs/{logId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-    }
-
-    // User Stats (Legacy - maintain for backward compatibility if needed)
-    match /user_stats/{userId} {
-      allow read: if isOwner(userId);
-      allow write: if isOwner(userId);
-    }
+    // -------------------------------------------------------------------------
+    // ACCESS RULES
+    // -------------------------------------------------------------------------
     
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // User Profiles & Stats
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false; // Users should not list other users
+      
+      allow create: if isOwner(userId) && isValidUserStats(incoming());
+      
+      allow update: if isOwner(userId) && isValidUserStats(incoming()) && (
+        // Action: Balance Sync
+        incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'equity', 'totalProfit', 'totalTrades', 'winRate', 'lastUpdated'])
+      );
+    }
+
+    // User Trades Subcollection
+    match /users/{userId}/trades/{tradeId} {
+      allow get: if isOwner(userId);
+      allow list: if isOwner(userId);
+      
+      allow create: if isOwner(userId) && isValidTrade(incoming()) && isValidId(tradeId);
+      
+      allow update: if isOwner(userId) && isValidTrade(incoming()) && (
+        // Action: Close Trade
+        (existing().status == 'OPEN' && incoming().status == 'CLOSED' && 
+         incoming().diff(existing()).affectedKeys().hasAll(['status', 'closePrice', 'closeTime', 'pnl']) &&
+         incoming().diff(existing()).affectedKeys().hasOnly(['status', 'closePrice', 'closeTime', 'pnl'])) ||
+        // Action: Update Risk (SL/TP)
+        (existing().status == 'OPEN' && incoming().diff(existing()).affectedKeys().hasOnly(['stopLoss', 'takeProfit']))
+      );
+      
+      allow delete: if false; // Immutability of history
+    }
+
     // Support Tickets
     match /support_tickets/{ticketId} {
-      allow create: if true;
-      allow read, update, delete: if isAuthenticated() && request.auth.token.email == "aryanad1234567890@gmail.com";
+      allow create: if isSignedIn() && isValidSupportTicket(incoming());
+      allow get: if isSignedIn() && (incoming().userId == request.auth.uid);
+      allow list: if false;
     }
   }
 }
