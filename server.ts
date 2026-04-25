@@ -5,8 +5,6 @@ import { createServer as createViteServer } from "vite";
 import BinanceFactory from 'binance-api-node';
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from 'dotenv';
-import crypto from 'crypto';
-import axios from 'axios';
 
 dotenv.config({ override: true });
 
@@ -413,102 +411,6 @@ app.post("/api/ai/backtest-data", async (req, res) => {
       });
     }
     res.status(500).json({ error: error.message });
-  }
-});
-
-// --- CASHFREE SETUP ---
-const CASHFREE_APP_ID = process.env.CASHFREE_APP_ID;
-const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY;
-const CASHFREE_BASE_URL = (process.env.CASHFREE_ENV || 'sandbox') === 'production' 
-  ? 'https://api.cashfree.com/pg' 
-  : 'https://sandbox.cashfree.com/pg';
-
-if (CASHFREE_APP_ID && CASHFREE_SECRET_KEY) {
-  console.log(`[Payments] Cashfree initialized in ${process.env.CASHFREE_ENV || 'sandbox'} mode.`);
-} else {
-  console.warn("[Payments] Cashfree credentials missing. Payments will be simulated or fail.");
-}
-
-// --- PAYMENT ENDPOINTS ---
-
-app.post("/api/payments/create-order", async (req, res) => {
-  const { userId, userEmail, userName, userPhone } = req.body;
-  
-  if (!userId) {
-    return res.status(400).json({ error: "Missing userId" });
-  }
-
-  // Preflight check for credentials
-  if (!CASHFREE_APP_ID || !CASHFREE_SECRET_KEY) {
-    return res.json({
-      payment_session_id: "dev_session_" + Date.now(),
-      order_id: "dev_order_" + Date.now(),
-      is_simulated: true
-    });
-  }
-
-  try {
-    const response = await axios.post(`${CASHFREE_BASE_URL}/orders`, {
-      order_amount: 1.00,
-      order_currency: "INR",
-      order_id: `order_${userId}_${Date.now()}`,
-      customer_details: {
-        customer_id: userId,
-        customer_phone: userPhone || "9999999999",
-        customer_name: userName || "Nebula User",
-        customer_email: userEmail || "user@example.com"
-      },
-      order_meta: {
-        return_url: `${req.headers.origin}/?order_id={order_id}&status=verify`,
-      },
-      order_note: "Premium Access: Analytics & Assistant"
-    }, {
-      headers: {
-        'x-client-id': CASHFREE_APP_ID,
-        'x-client-secret': CASHFREE_SECRET_KEY,
-        'x-api-version': '2023-08-01',
-        'Content-Type': 'application/json'
-      }
-    });
-
-    res.json(response.data);
-  } catch (error: any) {
-    console.error("[Payments] Create Order Error:", error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data?.message || "Failed to create order" });
-  }
-});
-
-app.post("/api/payments/verify-payment", async (req, res) => {
-  const { order_id } = req.body;
-  
-  if (!order_id) {
-    return res.status(400).json({ error: "Missing order_id" });
-  }
-
-  if (order_id.startsWith("dev_order_")) {
-    return res.json({ status: "SUCCESS", simulated: true });
-  }
-
-  try {
-    const response = await axios.get(`${CASHFREE_BASE_URL}/orders/${order_id}/payments`, {
-      headers: {
-        'x-client-id': CASHFREE_APP_ID,
-        'x-client-secret': CASHFREE_SECRET_KEY,
-        'x-api-version': '2023-08-01'
-      }
-    });
-    
-    const payments = response.data;
-    const successPayment = Array.isArray(payments) ? payments.find((p: any) => p.payment_status === "SUCCESS") : null;
-    
-    if (successPayment) {
-      res.json({ status: "SUCCESS", payment: successPayment });
-    } else {
-      res.json({ status: "PENDING", message: "No successful payment found" });
-    }
-  } catch (error: any) {
-    console.error("[Payments] Verify Payment Error:", error.response?.data || error.message);
-    res.status(500).json({ error: error.response?.data?.message || "Verification failed" });
   }
 });
 

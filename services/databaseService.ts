@@ -43,8 +43,7 @@ export const databaseService = {
           tradingMode: (data.tradingMode as TradingMode) || TradingMode.SPOT,
           binanceApiKey: '',
           binanceApiSecret: '',
-          isBinanceConnected: false,
-          hasPremiumAccess: data.hasPremiumAccess ?? false
+          isBinanceConnected: false
         });
       }
     }, (error) => {
@@ -105,7 +104,6 @@ export const databaseService = {
         realEquity: state.realEquity,
         accountType: state.accountType,
         tradingMode: state.tradingMode,
-        hasPremiumAccess: state.hasPremiumAccess,
         updatedAt: serverTimestamp()
       });
       await setDoc(docRef, data, { merge: true });
@@ -138,8 +136,7 @@ export const databaseService = {
         tradingMode: (data.tradingMode as TradingMode) || TradingMode.SPOT,
         binanceApiKey: '',
         binanceApiSecret: '',
-        isBinanceConnected: false,
-        hasPremiumAccess: data.hasPremiumAccess ?? false
+        isBinanceConnected: false
       };
     } catch (error: any) {
       if (!error.message?.includes('offline')) {
@@ -279,7 +276,6 @@ export const databaseService = {
           realBalance: 0,
           realEquity: 0,
           accountType: AccountType.PAPER,
-          hasPremiumAccess: false,
           createdAt: serverTimestamp()
         });
         await setDoc(docRef, data);
@@ -288,19 +284,6 @@ export const databaseService = {
       if (!error.message?.includes('offline')) {
         console.error('Error saving user to Firestore:', error);
       }
-    }
-  },
-
-  async setPremiumAccess(userId: string, status: boolean) {
-    try {
-      const docRef = doc(db, 'profiles', userId);
-      await updateDoc(docRef, { hasPremiumAccess: status });
-      
-      // Also update user_stats for redundancy if it exists
-      const statsRef = doc(db, 'user_stats', userId);
-      await updateDoc(statsRef, { hasPremiumAccess: status }).catch(() => {});
-    } catch (error: any) {
-      console.error('Error updating premium status:', error);
     }
   }
 };

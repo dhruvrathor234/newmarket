@@ -11,8 +11,7 @@
         "totalTrades": { "type": "number", "description": "Total count of closed trades" },
         "winRate": { "type": "number", "description": "Percentage of winning trades" },
         "lastUpdated": { "type": "number", "description": "Last sync timestamp" },
-        "accountType": { "type": "string", "enum": ["PAPER", "REAL"] },
-        "hasPremiumAccess": { "type": "boolean", "description": "Whether user has paid for Analytics and Assistant" }
+        "accountType": { "type": "string", "enum": ["PAPER", "REAL"] }
       },
       "required": ["balance", "lastUpdated"]
     },

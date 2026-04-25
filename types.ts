@@ -62,7 +62,6 @@ export interface UserStats {
   totalFeesPaid: number;
   amountOwed: number;
   isLocked: boolean;
-  hasPremiumAccess: boolean;
   lastUpdated: number;
 }
 
@@ -102,7 +101,6 @@ export interface BotState {
   binanceApiKey?: string;
   binanceApiSecret?: string;
   isBinanceConnected?: boolean;
-  hasPremiumAccess?: boolean;
 }
 
 export interface RiskSettings {
