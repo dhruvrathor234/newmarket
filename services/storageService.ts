@@ -146,5 +146,13 @@ export const storageService = {
   resetAll: () => {
     localStorage.clear();
     window.location.reload();
+  },
+
+  clearSession: () => {
+    localStorage.removeItem(KEYS.BOT_STATE);
+    localStorage.removeItem(KEYS.TRADES);
+    localStorage.removeItem(KEYS.LOGS);
+    localStorage.removeItem(KEYS.CHAT_HISTORY);
+    localStorage.removeItem(KEYS.USER);
   }
 };

@@ -5,6 +5,16 @@ export const fetchEconomicEvents = async (): Promise<EconomicEvent[]> => {
   try {
     const response = await fetch("/api/ai/economic-events", { method: "GET" });
     if (!response.ok) {
+      if (response.status === 429) {
+        return [{ 
+          time: new Date().toISOString(), 
+          currency: 'USD', 
+          event: 'AI Quota Check', 
+          impact: 'LOW', 
+          forecast: 'Stable', 
+          previous: 'Normal' 
+        }];
+      }
       const data = await response.json().catch(() => ({}));
       throw new Error(data.error || "Backend error");
     }
@@ -23,6 +33,18 @@ export const analyzeMarket = async (symbol: Symbol): Promise<MarketAnalysis> => 
       body: JSON.stringify({ symbol })
     });
     if (!response.ok) {
+      if (response.status === 429) {
+        return {
+          symbol,
+          timestamp: Date.now(),
+          decision: TradeType.HOLD,
+          sentimentScore: 0,
+          sentimentCategory: 'NEUTRAL',
+          reasoning: "AI Quota limit reached. Neural core cooling down. Standard logic applied.",
+          sources: [],
+          strategy: 'SENTIMENT'
+        };
+      }
       const data = await response.json().catch(() => ({}));
       throw new Error(data.error || "Backend error");
     }

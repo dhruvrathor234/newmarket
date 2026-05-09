@@ -122,7 +122,10 @@ const InstrumentList: React.FC<InstrumentListProps> = ({ activeSymbol, onSelect,
                                 </div>
                                 <div className="flex justify-between items-baseline gap-2">
                                     <span className="text-[12px] font-mono font-bold text-white tracking-tight">
-                                        {details?.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        {details?.price.toLocaleString(undefined, { 
+                                            minimumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? (sym.includes('JPY') ? 2 : 4) : 2, 
+                                            maximumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? (sym.includes('JPY') ? 3 : 5) : 2 
+                                        })}
                                     </span>
                                     <span className={`text-[9px] font-mono font-bold ${isUp ? 'text-emerald-500' : 'text-rose-500'}`}>
                                         {isUp ? '+' : ''}{details?.change24hPercent.toFixed(2)}%
@@ -226,8 +229,18 @@ const InstrumentList: React.FC<InstrumentListProps> = ({ activeSymbol, onSelect,
                                             </span>
                                         </div>
                                     </td>
-                                    <td className="px-2 py-3 text-right font-mono text-[10px] text-slate-400">{details?.bid.toFixed(2)}</td>
-                                    <td className="px-2 py-3 text-right font-mono text-[10px] text-slate-400">{details?.ask.toFixed(2)}</td>
+                                    <td className="px-2 py-3 text-right font-mono text-[10px] text-slate-400">
+                                        {details?.bid.toLocaleString(undefined, { 
+                                            minimumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? (sym.includes('JPY') ? 2 : 4) : 2,
+                                            maximumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? (sym.includes('JPY') ? 3 : 5) : 2
+                                        })}
+                                    </td>
+                                    <td className="px-2 py-3 text-right font-mono text-[10px] text-slate-400">
+                                        {details?.ask.toLocaleString(undefined, { 
+                                            minimumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? (sym.includes('JPY') ? 2 : 4) : 2,
+                                            maximumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? (sym.includes('JPY') ? 3 : 5) : 2
+                                        })}
+                                    </td>
                                     <td className="pl-2 pr-3 py-3 text-right">
                                         <Star size={12} onClick={(e) => toggleFavorite(e, sym)} className={`transition-all ${favorites.has(sym) ? 'text-blue-500 fill-blue-500' : 'text-slate-800 opacity-0 group-hover:opacity-100'}`} />
                                     </td>

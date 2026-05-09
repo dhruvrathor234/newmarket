@@ -44,11 +44,13 @@ const AssistantView: React.FC<AssistantViewProps> = ({ activeSymbol, marketDetai
     storageService.saveChatHistory(messages);
   }, [messages]);
 
+  const safeId = () => Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+
   const handleClearChat = () => {
     if (confirm("Reset chat history?")) {
         storageService.clearChatHistory();
         setMessages([{
-            id: crypto.randomUUID(),
+            id: safeId(),
             role: 'assistant',
             content: `History reset. Ready for your questions.`,
             timestamp: Date.now()
@@ -84,8 +86,9 @@ const AssistantView: React.FC<AssistantViewProps> = ({ activeSymbol, marketDetai
     if ((!input.trim() && !selectedImage) || isLoading) return;
 
     const userText = input;
+    const safeId = () => Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
     const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
+      id: safeId(),
       role: 'user',
       content: userText,
       timestamp: Date.now(),
@@ -128,7 +131,7 @@ const AssistantView: React.FC<AssistantViewProps> = ({ activeSymbol, marketDetai
       );
 
       const aiMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: safeId(),
         role: 'assistant',
         content: responseText,
         timestamp: Date.now()
@@ -137,7 +140,7 @@ const AssistantView: React.FC<AssistantViewProps> = ({ activeSymbol, marketDetai
       setMessages(prev => [...prev, aiMsg]);
     } catch (error) {
       const errorMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: safeId(),
         role: 'assistant',
         content: "Neural core link timeout. Reconnecting...",
         timestamp: Date.now()

@@ -1,19 +1,21 @@
 
 import React, { useState, useRef } from 'react';
-import { User, ShieldCheck, Mail, MapPin, Phone, Upload, CheckCircle, AlertCircle, Camera, CreditCard, Loader2, XCircle, Key, ExternalLink, Info, ShieldAlert, TrendingUp } from 'lucide-react';
+import { User, ShieldCheck, Mail, MapPin, Phone, Upload, CheckCircle, AlertCircle, Camera, CreditCard, Loader2, XCircle, Key, ExternalLink, Info, ShieldAlert, TrendingUp, History, LogOut } from 'lucide-react';
 import { verifyIdentityDocuments } from '../../services/geminiService';
-import { BotState, UserStats } from '../../types';
+import { BotState, UserStats, Transaction } from '../../types';
 import NebulaFeeDashboard from '../NebulaFeeDashboard';
 
 interface ProfileViewProps {
   userEmail: string;
   botState: BotState;
   userStats: UserStats | null;
+  transactions: Transaction[];
   onConnectBinance: (apiKey: string, apiSecret: string) => void;
+  onLogout: () => void;
 }
 
-const ProfileView: React.FC<ProfileViewProps> = ({ userEmail, botState, userStats, onConnectBinance }) => {
-  const [activeTab, setActiveTab] = useState<'DETAILS' | 'KYC' | 'BINANCE' | 'FEES'>('DETAILS');
+const ProfileView: React.FC<ProfileViewProps> = ({ userEmail, botState, userStats, transactions, onConnectBinance, onLogout }) => {
+  const [activeTab, setActiveTab] = useState<'DETAILS' | 'KYC' | 'BINANCE' | 'FEES' | 'HISTORY'>('DETAILS');
   const [formData, setFormData] = useState({
     name: 'John Doe',
     address: '123 Wall Street, Financial District, NY 10005',
@@ -109,6 +111,21 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userEmail, botState, userStat
             <TrendingUp size={16} /> Nebula Share
             {userStats?.isLocked && <div className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>}
           </button>
+          <button 
+            onClick={() => setActiveTab('HISTORY')}
+            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'HISTORY' ? 'bg-zinc-100 text-black shadow-xl shadow-white/5' : 'text-zinc-500 hover:bg-white/5 hover:text-white'}`}
+          >
+            <History size={16} /> Transactions
+          </button>
+
+          <div className="pt-8 px-2">
+            <button 
+              onClick={onLogout}
+              className="w-full flex items-center gap-3 px-6 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-500 hover:bg-rose-500/10 transition-all border border-transparent hover:border-rose-500/20"
+            >
+              <LogOut size={16} /> System Logout
+            </button>
+          </div>
         </div>
 
         {/* Content Area */}
@@ -379,6 +396,58 @@ const ProfileView: React.FC<ProfileViewProps> = ({ userEmail, botState, userStat
                     // Stats will update via onSnapshot in App.tsx
                   }} 
                 />
+              </div>
+            )}
+
+            {activeTab === 'HISTORY' && (
+              <div className="space-y-6 animate-fade-in">
+                <div className="flex justify-between items-center px-2">
+                    <h3 className="text-xl font-black text-white uppercase tracking-tight">Payment History</h3>
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+                        Total {transactions.length} Records
+                    </div>
+                </div>
+
+                <div className="space-y-3">
+                    {transactions.length === 0 ? (
+                        <div className="py-20 text-center space-y-4 bg-black/20 rounded-3xl border border-white/5 border-dashed">
+                            <History size={40} className="mx-auto text-zinc-700" />
+                            <p className="text-zinc-500 text-xs font-medium uppercase tracking-widest">No transaction history detected</p>
+                        </div>
+                    ) : (
+                        transactions.map((tx) => (
+                            <div key={tx.id} className="group p-5 bg-white/[0.02] hover:bg-white/[0.04] border border-white/5 rounded-2xl transition-all flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-4">
+                                    <div className={`p-3 rounded-xl ${tx.status === 'COMPLETED' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                                        <CreditCard size={18} />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-sm font-black text-white uppercase">{tx.planName}</p>
+                                            <span className="text-[10px] font-mono text-zinc-500">{tx.id}</span>
+                                        </div>
+                                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-0.5">
+                                            {new Date(tx.createdAt).toLocaleDateString()} • {tx.method.replace('_', ' ')}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-lg font-black text-white">${tx.amount.toFixed(2)}</p>
+                                    <p className={`text-[8px] font-black uppercase tracking-widest ${tx.status === 'COMPLETED' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                        {tx.status}
+                                    </p>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+
+                <div className="p-4 bg-zinc-900/50 rounded-2xl border border-white/5 flex items-start gap-3">
+                    <Info size={14} className="text-blue-500 mt-1 shrink-0" />
+                    <p className="text-[10px] text-zinc-500 leading-relaxed uppercase tracking-tighter">
+                        Transactions are verified by our neural engine. If you encounter any delays in activation, please contact system support with your transaction hash.
+                    </p>
+                </div>
               </div>
             )}
           </div>

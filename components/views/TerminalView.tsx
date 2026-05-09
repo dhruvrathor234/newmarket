@@ -25,7 +25,7 @@ interface TerminalViewProps {
   balance: number;
   botState: BotState;
   onRiskUpdate: (settings: RiskSettings) => void;
-  onManualTrade: (type: TradeType, lots: number, slDist: number, tpDist: number, limitPrice?: number) => void;
+  onManualTrade: (type: TradeType, lots: number, slDist: number, tpDist: number, limitPrice?: number, overrideDetails?: MarketDetails, leverage?: number, symbol?: Symbol) => void;
   onCloseTrade: (id: string) => void;
   onUpdateTrade: (id: string, sl: number, tp: number) => void;
   isBotActive: boolean;
@@ -53,6 +53,7 @@ interface TerminalViewProps {
   onSetAccountType: (type: AccountType) => void;
   onSetTradingMode: (mode: TradingMode) => void;
   onConnectBinance: (apiKey: string, apiSecret: string) => void;
+  onConnectMetaTrader: (accountId: string, masterPassword: string, server: string) => void;
   onCopyTrade: (analysis: MarketAnalysis) => void;
   lastAnalysis: MarketAnalysis | null;
   candles: Candle[];
@@ -72,9 +73,10 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
   const [showLayoutMenu, setShowLayoutMenu] = useState(false);
   
   // Mobile UI States
+  const [focusedIdx, setFocusedIdx] = useState(0);
   const [isMarketsOpen, setIsMarketsOpen] = useState(false);
   const [isOrderOpen, setIsOrderOpen] = useState(false);
-
+  
   const timeframes = [
     { id: '1m', label: '1 min' },
     { id: '5m', label: '5 min' },
@@ -152,14 +154,16 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
     setShowTfMenu(false);
   };
 
-  // Sync first layout symbol with active symbol
+  // Sync focused layout symbol with active symbol from props
   useEffect(() => {
     setLayoutSymbols(prev => {
       const next = [...prev];
-      next[0] = props.symbol;
+      if (next[focusedIdx] !== props.symbol) {
+        next[focusedIdx] = props.symbol;
+      }
       return next;
     });
-  }, [props.symbol]);
+  }, [props.symbol, focusedIdx]);
 
   // Calculate Markers for Nebula V5
   useEffect(() => {
@@ -458,48 +462,69 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
 
             <div className={`h-[500px] lg:h-[600px] relative shrink-0 grid gap-1 p-1 bg-black/20 ${getLayoutGridClass()}`}>
                {activeView === 'CHART' ? (
-                 Array.from({ length: getChartCount() }).map((_, idx) => (
-                   <div key={idx} className="relative border border-white/5 rounded overflow-hidden bg-[#0b0c10]">
-                      <div className="absolute top-2 left-2 z-50 flex items-center gap-2">
-                        <select 
-                          value={layoutSymbols[idx] || props.symbol}
-                          onChange={(e) => {
-                            const newSymbols = [...layoutSymbols];
-                            newSymbols[idx] = e.target.value as Symbol;
-                            setLayoutSymbols(newSymbols);
-                          }}
-                          className="bg-black/60 text-white text-[9px] font-bold uppercase border border-white/10 rounded px-1 py-0.5 outline-none focus:border-blue-500 transition-all"
-                        >
-                          {Object.keys(props.prices).filter(s => {
-                            const asset = ASSETS[s as Symbol];
-                            if (props.botState.accountType === AccountType.REAL) {
-                              if (asset.CATEGORY !== 'CRYPTO') return false;
-                              if (asset.MODES && !asset.MODES.includes(props.botState.tradingMode)) return false;
-                            }
-                            return true;
-                          }).map(s => (
-                            <option key={s} value={s}>{s}</option>
-                          ))}
-                        </select>
-                      </div>
-                      {props.botState.accountType === AccountType.REAL ? (
-                        <TradingViewWidget 
-                          symbol={layoutSymbols[idx] || props.symbol}
-                          tradingMode={props.botState.tradingMode}
-                        />
-                      ) : (
-                        <CandlestickChart 
-                          symbol={layoutSymbols[idx] || props.symbol} 
-                          currentPrice={props.prices[layoutSymbols[idx] || props.symbol]} 
-                          timeframe={activeTf}
-                          trades={props.trades.filter(t => t.accountType === props.botState.accountType)}
-                          markers={markersMap[layoutSymbols[idx] || props.symbol] || []}
-                          onUpdateTrade={props.onUpdateTrade}
-                          indicators={indicators}
-                        />
-                      )}
-                   </div>
-                 ))
+                 Array.from({ length: getChartCount() }).map((_, idx) => {
+                   const cellSymbol = layoutSymbols[idx] || props.symbol;
+                   const isFocused = idx === focusedIdx;
+                   
+                   return (
+                     <div 
+                        key={idx} 
+                        onClick={() => {
+                          setFocusedIdx(idx);
+                          props.onSelectSymbol(cellSymbol);
+                        }}
+                        className={`relative border rounded overflow-hidden bg-[#0b0c10] transition-all cursor-pointer ${isFocused ? 'border-blue-500/50 ring-1 ring-blue-500/30' : 'border-white/5'}`}
+                     >
+                        <div className="absolute top-2 left-2 z-50 flex items-center gap-2">
+                          <select 
+                            value={cellSymbol}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const sym = e.target.value as Symbol;
+                              const newSymbols = [...layoutSymbols];
+                              newSymbols[idx] = sym;
+                              setLayoutSymbols(newSymbols);
+                              setFocusedIdx(idx);
+                              props.onSelectSymbol(sym);
+                            }}
+                            className="bg-black/60 text-white text-[9px] font-bold uppercase border border-white/10 rounded px-1 py-0.5 outline-none focus:border-blue-500 transition-all pointer-events-auto"
+                          >
+                            {Object.keys(props.prices).filter(s => {
+                              const asset = ASSETS[s as Symbol];
+                              if (props.botState.accountType === AccountType.REAL) {
+                                if (asset.CATEGORY !== 'CRYPTO') return false;
+                                if (asset.MODES && !asset.MODES.includes(props.botState.tradingMode)) return false;
+                              }
+                              return true;
+                            }).map(s => (
+                              <option key={s} value={s}>{s}</option>
+                            ))}
+                          </select>
+                          {isFocused && (
+                            <div className="bg-blue-600/20 text-blue-400 text-[7px] font-black px-1.5 py-0.5 rounded border border-blue-500/20 uppercase tracking-tighter shadow-glow pointer-events-none">
+                              Active Context
+                            </div>
+                          )}
+                        </div>
+                        {props.botState.accountType === AccountType.REAL ? (
+                          <TradingViewWidget 
+                            symbol={cellSymbol}
+                            tradingMode={props.botState.tradingMode}
+                          />
+                        ) : (
+                          <CandlestickChart 
+                            symbol={cellSymbol} 
+                            currentPrice={props.prices[cellSymbol]} 
+                            timeframe={activeTf}
+                            trades={props.trades.filter(t => t.accountType === props.botState.accountType && t.symbol === cellSymbol)}
+                            markers={markersMap[cellSymbol] || []}
+                            onUpdateTrade={props.onUpdateTrade}
+                            indicators={indicators}
+                          />
+                        )}
+                     </div>
+                   );
+                 })
                ) : (
                  <BacktestEngine 
                     currentSymbol={props.symbol}
@@ -566,10 +591,18 @@ const TerminalView: React.FC<TerminalViewProps> = (props) => {
                     tradingMode={props.botState.tradingMode}
                     onSetTradingMode={props.onSetTradingMode}
                     isBinanceConnected={props.botState.isBinanceConnected}
+                    isMtConnected={props.botState.isMtConnected}
                     onConnectBinance={props.onConnectBinance}
+                    onConnectMetaTrader={props.onConnectMetaTrader}
                     onOpenDeposit={props.onOpenDeposit}
                     onOpenWithdraw={props.onOpenWithdraw}
                     isLocked={props.isLocked}
+                    connectionType={props.botState.connectionType}
+                    binanceApiKey={props.botState.binanceApiKey}
+                    binanceApiSecret={props.botState.binanceApiSecret}
+                    mtAccountId={props.botState.mtAccountId}
+                    mtMasterPassword={props.botState.mtMasterPassword}
+                    mtServer={props.botState.mtServer}
                  />
                  
                  {/* CUSTOM AI BOT PANEL ADDED ABOVE ORDER BOOK */}

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { TradeType, Symbol, MarketDetails, RiskSettings, BotStrategy, NebulaV5Settings, AccountType, TradingMode } from '../types';
 import { ASSETS } from '../constants';
-import { Power, Bot, Zap, BrainCircuit, ChevronRight, Info, Settings, Target, ShieldCheck, Globe, UserCheck, Key, Shield } from 'lucide-react';
+import { Power, Bot, Zap, BrainCircuit, ChevronRight, Info, Settings, Target, ShieldCheck, Globe, UserCheck, Key, Shield, Lock, Server } from 'lucide-react';
 import NebulaV5SettingsModal from './NebulaV5SettingsModal';
 import HedgingBotSettingsModal from './HedgingBotSettingsModal';
 import HFTBotSettingsModal from './HFTBotSettingsModal';
@@ -14,7 +14,7 @@ interface OrderPanelProps {
     marketDetails: MarketDetails;
     riskSettings: RiskSettings;
     balance: number;
-    onManualTrade: (type: TradeType, lots: number, slDist: number, tpDist: number, limitPrice?: number) => void;
+    onManualTrade: (type: TradeType, lots: number, slDist: number, tpDist: number, limitPrice?: number, overrideDetails?: MarketDetails, leverage?: number, symbol?: Symbol) => void;
     isBotActive: boolean;
     onToggleBot: () => void;
     isAnalyzing: boolean;
@@ -33,10 +33,18 @@ interface OrderPanelProps {
     tradingMode: TradingMode;
     onSetTradingMode: (mode: TradingMode) => void;
     isBinanceConnected: boolean;
+    isMtConnected: boolean;
     onConnectBinance: (apiKey: string, apiSecret: string) => void;
+    onConnectMetaTrader: (accountId: string, masterPassword: string, server: string) => void;
     onOpenDeposit: () => void;
     onOpenWithdraw: () => void;
     isLocked?: boolean;
+    connectionType?: 'BINANCE' | 'METATRADER';
+    binanceApiKey?: string;
+    mtAccountId?: string;
+    mtMasterPassword?: string;
+    binanceApiSecret?: string;
+    mtServer?: string;
 }
 
 const OrderPanel: React.FC<OrderPanelProps> = ({ 
@@ -63,10 +71,18 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     tradingMode,
     onSetTradingMode,
     isBinanceConnected,
+    isMtConnected,
     onConnectBinance,
+    onConnectMetaTrader,
     onOpenDeposit,
     onOpenWithdraw,
-    isLocked
+    isLocked,
+    connectionType,
+    binanceApiKey,
+    binanceApiSecret,
+    mtAccountId,
+    mtMasterPassword,
+    mtServer
 }) => {
     const [orderType, setOrderType] = useState<'MARKET' | 'PENDING'>('MARKET');
     const [lots, setLots] = useState(0.20);
@@ -85,6 +101,11 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
     const [isHedgingSettingsOpen, setIsHedgingSettingsOpen] = useState(false);
     const [isHFTSettingsOpen, setIsHFTSettingsOpen] = useState(false);
     const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+    const [connectType, setConnectType] = useState<'BINANCE' | 'METATRADER'>(connectionType || 'BINANCE');
+
+    useEffect(() => {
+        if (connectionType) setConnectType(connectionType);
+    }, [connectionType]);
     const [leverage, setLeverage] = useState(20);
 
     const asset = ASSETS[symbol];
@@ -127,20 +148,19 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
 
     const handleTrade = (type: TradeType) => {
         if (accountType === 'REAL') {
-            // For real account, we pass quantity and type
-            // We'll reuse onManualTrade but with special values if needed, 
-            // or better, update the signature in App.tsx
+            const genId = () => Math.random().toString(36).substring(2, 9);
             onManualTrade(
                 type, 
-                quantityType === 'USD' ? quantity / currentPrice : quantity, // Convert to "lots" (asset amount) for the existing logic
+                quantityType === 'USD' ? quantity / currentPrice : quantity, 
                 useSL ? (Math.abs(currentPrice - slPrice)) : 0, 
                 useTP ? (Math.abs(currentPrice - tpPrice)) : 0, 
                 orderType === 'PENDING' ? limitPrice : undefined,
-                undefined, // overrideDetails
-                leverage
+                undefined, 
+                leverage,
+                symbol
             );
         } else {
-            onManualTrade(type, lots, useSL ? slDist : 0, useTP ? tpDist : 0, orderType === 'PENDING' ? limitPrice : undefined);
+            onManualTrade(type, lots, useSL ? slDist : 0, useTP ? tpDist : 0, orderType === 'PENDING' ? limitPrice : undefined, undefined, undefined, symbol);
         }
     };
 
@@ -187,10 +207,18 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
             <ConnectBinanceModal 
                 isOpen={isConnectModalOpen}
                 onClose={() => setIsConnectModalOpen(false)}
-                onConnect={(key, secret) => {
-                    onConnectBinance(key, secret);
+                initialApiKey={connectType === 'BINANCE' ? binanceApiKey : mtAccountId}
+                initialApiSecret={connectType === 'BINANCE' ? binanceApiSecret : mtMasterPassword}
+                initialServer={connectType === 'METATRADER' ? mtServer : ''}
+                onConnect={(key, secret, server) => {
+                    if (connectType === 'BINANCE') {
+                        onConnectBinance(key, secret);
+                    } else {
+                        onConnectMetaTrader(key, secret, server || '');
+                    }
                     setIsConnectModalOpen(false);
                 }}
+                type={connectType}
             />
 
             {/* ACCOUNT TYPE TOGGLE */}
@@ -241,27 +269,72 @@ const OrderPanel: React.FC<OrderPanelProps> = ({
                             </button>
                         </div>
 
-                        {!isBinanceConnected ? (
+                        <div className="grid grid-cols-2 gap-2 bg-black/40 p-1 rounded-lg border border-white/5">
                             <button 
-                                onClick={() => setIsConnectModalOpen(true)}
-                                className="w-full py-2.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[9px] font-black uppercase tracking-[0.2em] hover:bg-yellow-500/20 transition-all flex items-center justify-center gap-2"
+                                onClick={() => setConnectType('BINANCE')}
+                                className={`py-2 text-[8px] font-black uppercase tracking-widest rounded transition-all ${connectType === 'BINANCE' ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-900/40' : 'text-slate-600 hover:text-slate-400'}`}
                             >
-                                <Key size={12} />
-                                Connect Binance API
+                                Binance
                             </button>
-                        ) : (
-                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                    <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Binance Connected</span>
-                                </div>
+                            <button 
+                                onClick={() => setConnectType('METATRADER')}
+                                className={`py-2 text-[8px] font-black uppercase tracking-widest rounded transition-all ${connectType === 'METATRADER' ? 'bg-[#005aff] text-white shadow-lg shadow-blue-900/40' : 'text-slate-600 hover:text-slate-400'}`}
+                            >
+                                MetaTrader
+                            </button>
+                        </div>
+
+                        {connectType === 'BINANCE' ? (
+                            !isBinanceConnected || connectionType !== 'BINANCE' ? (
                                 <button 
                                     onClick={() => setIsConnectModalOpen(true)}
-                                    className="text-[8px] font-bold text-slate-500 hover:text-white uppercase tracking-tighter"
+                                    className="w-full py-2.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-500 text-[9px] font-black uppercase tracking-[0.2em] hover:bg-yellow-500/20 transition-all flex items-center justify-center gap-2"
                                 >
-                                    Update Keys
+                                    <Key size={12} />
+                                    Connect Binance API
                                 </button>
-                            </div>
+                            ) : (
+                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                        <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Binance Connected</span>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsConnectModalOpen(true)}
+                                        className="text-[8px] font-bold text-slate-500 hover:text-white uppercase tracking-tighter"
+                                    >
+                                        Update Keys
+                                    </button>
+                                </div>
+                            )
+                        ) : (
+                            !isMtConnected || connectionType !== 'METATRADER' ? (
+                                <button 
+                                    onClick={() => setIsConnectModalOpen(true)}
+                                    className="w-full py-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-500 text-[9px] font-black uppercase tracking-[0.2em] hover:bg-blue-500/20 transition-all flex items-center justify-center gap-2"
+                                >
+                                    <Lock size={12} />
+                                    Synchronize MetaTrader
+                                </button>
+                            ) : (
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                            <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">MT Sync Active</span>
+                                        </div>
+                                        <button 
+                                            onClick={() => setIsConnectModalOpen(true)}
+                                            className="text-[8px] font-bold text-slate-500 hover:text-white uppercase tracking-tighter"
+                                        >
+                                            Update
+                                        </button>
+                                    </div>
+                                    <div className="px-2 py-1 bg-blue-500/5 border border-blue-500/10 rounded-md">
+                                        <p className="text-[8px] text-blue-400/70 font-bold uppercase tracking-tight text-center">Investor Mode: Statistics Only</p>
+                                    </div>
+                                </div>
+                            )
                         )}
                     </div>
                 )}

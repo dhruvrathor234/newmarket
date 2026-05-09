@@ -72,10 +72,9 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
   }, []);
 
   const filteredSymbols = (Object.keys(ASSETS) as Symbol[]).filter(sym => {
+    const asset = ASSETS[sym];
     if (marketFilter === 'ALL') return true;
-    if (marketFilter === 'CRYPTO') return sym !== 'XAUUSD' && sym !== 'XAGUSD' && sym !== 'WTIUSD';
-    if (marketFilter === 'COMMODITIES') return sym === 'XAUUSD' || sym === 'XAGUSD' || sym === 'WTIUSD';
-    return false;
+    return asset.CATEGORY === marketFilter;
   });
 
   const renderAnimatedText = (text: string, baseClass: string) => {
@@ -233,12 +232,13 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
                       <h2 className="text-4xl font-black text-white tracking-tighter uppercase">Market Pulse</h2>
                       <div className="px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-[10px] font-black uppercase rounded-full animate-pulse tracking-widest">Active Feed</div>
                   </div>
-                  <p className="text-zinc-500 text-sm">Real-time price data for Crypto and Commodities.</p>
+                  <p className="text-zinc-500 text-sm">Real-time price data for Crypto, Forex and Commodities.</p>
               </div>
-              <div className="flex gap-2 bg-zinc-950 p-1.5 rounded-2xl border border-white/5">
-                  <button onClick={() => setMarketFilter('ALL')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${marketFilter === 'ALL' ? 'bg-white text-black' : 'text-zinc-500 hover:text-white'}`}>All Assets</button>
-                  <button onClick={() => setMarketFilter('CRYPTO')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${marketFilter === 'CRYPTO' ? 'bg-white text-black' : 'text-zinc-500 hover:text-white'}`}>Crypto</button>
-                  <button onClick={() => setMarketFilter('COMMODITIES')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${marketFilter === 'COMMODITIES' ? 'bg-white text-black' : 'text-zinc-500 hover:text-white'}`}>Metals</button>
+              <div className="flex gap-2 bg-zinc-950 p-1.5 rounded-2xl border border-white/5 overflow-x-auto">
+                  <button onClick={() => setMarketFilter('ALL')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${marketFilter === 'ALL' ? 'bg-white text-black' : 'text-zinc-500 hover:text-white'}`}>All Assets</button>
+                  <button onClick={() => setMarketFilter('CRYPTO')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${marketFilter === 'CRYPTO' ? 'bg-white text-black' : 'text-zinc-500 hover:text-white'}`}>Crypto</button>
+                  <button onClick={() => setMarketFilter('FOREX')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${marketFilter === 'FOREX' ? 'bg-white text-black' : 'text-zinc-500 hover:text-white'}`}>Forex</button>
+                  <button onClick={() => setMarketFilter('COMMODITIES')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${marketFilter === 'COMMODITIES' ? 'bg-white text-black' : 'text-zinc-500 hover:text-white'}`}>Metals</button>
               </div>
           </div>
 
@@ -273,8 +273,8 @@ const DashboardView: React.FC<DashboardViewProps> = ({ botState, trades, prices,
                                               <span className="text-zinc-400 text-[10px] font-bold uppercase">Ready</span>
                                           </div>
                                       </td>
-                                      <td className="p-6 text-zinc-300 font-bold">{(details.bid ?? 0).toFixed(2)}</td>
-                                      <td className="p-6 text-zinc-300 font-bold">{(details.ask ?? 0).toFixed(2)}</td>
+                                      <td className="p-6 text-zinc-300 font-bold">{(details.bid ?? 0).toLocaleString(undefined, { minimumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? 4 : 2, maximumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? 4 : 2 })}</td>
+                                      <td className="p-6 text-zinc-300 font-bold">{(details.ask ?? 0).toLocaleString(undefined, { minimumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? 4 : 2, maximumFractionDigits: ASSETS[sym].CATEGORY === 'FOREX' ? 4 : 2 })}</td>
                                       <td className="p-6">
                                           <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black ${(details.change24hPercent ?? 0) >= 0 ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
                                               {(details.change24hPercent ?? 0) >= 0 ? '▲' : '▼'} {Math.abs(details.change24hPercent ?? 0).toFixed(2)}%

@@ -1,7 +1,8 @@
 
 export type Symbol = 
   | 'XAUUSD' | 'XAGUSD' | 'WTIUSD'
-  | 'BTCUSD' | 'ETHUSD' | 'SOLUSD' | 'DOGEUSD' | 'XRPUSD' | 'ADAUSD' | 'AVAXUSD' | 'DOTUSD' | 'LINKUSD' | 'LTCUSD';
+  | 'BTCUSD' | 'ETHUSD' | 'SOLUSD' | 'DOGEUSD' | 'XRPUSD' | 'ADAUSD' | 'AVAXUSD' | 'DOTUSD' | 'LINKUSD' | 'LTCUSD'
+  | 'EURUSD' | 'GBPUSD' | 'USDJPY' | 'AUDUSD' | 'USDCAD' | 'USDCHF' | 'NZDUSD' | 'EURGBP' | 'EURJPY' | 'GBPJPY' | 'EURCHF' | 'AUDJPY' | 'GBPCAD' | 'AUDCAD' | 'NZDJPY';
 
 export type AssetCategory = 'CRYPTO' | 'FOREX' | 'COMMODITIES';
 
@@ -84,6 +85,15 @@ export interface Trade {
   binanceOrderId?: string;
 }
 
+export interface Transaction {
+  id: string;
+  amount: number;
+  planName: string;
+  method: string;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED';
+  createdAt: number;
+}
+
 export interface BotState {
   isRunning: boolean;
   strategy: BotStrategy; 
@@ -101,6 +111,12 @@ export interface BotState {
   binanceApiKey?: string;
   binanceApiSecret?: string;
   isBinanceConnected?: boolean;
+  mtAccountId?: string;
+  mtMasterPassword?: string;
+  mtServer?: string;
+  isMtConnected?: boolean;
+  connectionType?: 'BINANCE' | 'METATRADER';
+  isSubscribed?: boolean;
 }
 
 export interface RiskSettings {

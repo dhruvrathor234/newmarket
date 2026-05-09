@@ -1,7 +1,8 @@
 
 import { db } from '../firebase';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, updateDoc, writeBatch, serverTimestamp, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { Trade, BotState, TradingMode, AccountType, TradeType, Symbol } from '../types';
+import { Trade, BotState, TradingMode, AccountType, TradeType, Symbol, Transaction } from '../types';
+import { supabase } from '../lib/supabase';
 
 // Sanitizer to convert undefined values to null for Firestore
 const sanitize = (data: any): any => {
@@ -41,9 +42,15 @@ export const databaseService = {
           customLogic: data.customLogic ?? '',
           accountType: (data.accountType as AccountType) || AccountType.PAPER,
           tradingMode: (data.tradingMode as TradingMode) || TradingMode.SPOT,
-          binanceApiKey: '',
-          binanceApiSecret: '',
-          isBinanceConnected: false
+          binanceApiKey: data.binanceApiKey ?? '',
+          binanceApiSecret: data.binanceApiSecret ?? '',
+          isBinanceConnected: data.isBinanceConnected ?? false,
+          mtAccountId: data.mtAccountId ?? '',
+          mtMasterPassword: data.mtMasterPassword ?? '',
+          mtServer: data.mtServer ?? '',
+          isMtConnected: data.isMtConnected ?? false,
+          connectionType: data.connectionType ?? 'BINANCE',
+          isSubscribed: data.isSubscribed ?? false
         });
       }
     }, (error) => {
@@ -86,9 +93,51 @@ export const databaseService = {
     });
   },
 
+  // --- TRANSACTIONS ---
+  async saveTransaction(userId: string, tx: Transaction) {
+    try {
+      // 1. Firebase
+      const txRef = doc(db, 'transactions', tx.id);
+      await setDoc(txRef, {
+        ...sanitize(tx),
+        userId,
+        serverTimestamp: serverTimestamp()
+      });
+
+      // 2. Supabase
+      await supabase.from('transactions').insert([{
+        id: tx.id,
+        firebase_uid: userId,
+        amount: tx.amount,
+        plan_name: tx.planName,
+        method: tx.method,
+        status: tx.status,
+        created_at: new Date(tx.createdAt).toISOString()
+      }]);
+    } catch (error) {
+      console.error('Error saving transaction:', error);
+    }
+  },
+
+  async getTransactions(userId: string): Promise<Transaction[]> {
+    try {
+      const q = query(
+        collection(db, 'transactions'),
+        where('userId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      return snapshot.docs.map(doc => doc.data() as Transaction);
+    } catch (error) {
+      console.error('Error getting transactions:', error);
+      return [];
+    }
+  },
+
   // --- PROFILES / BOT STATE ---
   async saveBotState(userId: string, state: BotState) {
     try {
+      // 1. Firestore Save
       const docRef = doc(db, 'profiles', userId);
       const data = sanitize({
         balance: state.balance,
@@ -104,11 +153,34 @@ export const databaseService = {
         realEquity: state.realEquity,
         accountType: state.accountType,
         tradingMode: state.tradingMode,
+        binanceApiKey: state.binanceApiKey,
+        binanceApiSecret: state.binanceApiSecret,
+        isBinanceConnected: state.isBinanceConnected,
+        mtAccountId: state.mtAccountId,
+        mtMasterPassword: state.mtMasterPassword,
+        mtServer: state.mtServer,
+        isMtConnected: state.isMtConnected,
+        connectionType: state.connectionType,
+        isSubscribed: state.isSubscribed || false,
         updatedAt: serverTimestamp()
       });
       await setDoc(docRef, data, { merge: true });
+
+      // 2. Supabase Sync
+      await supabase.from('users').upsert({
+        firebase_uid: userId,
+        balance: state.balance,
+        paper_balance: state.paperBalance,
+        real_balance: state.realBalance,
+        account_type: state.accountType,
+        strategy: state.strategy,
+        connection_type: state.connectionType,
+        is_subscribed: state.isSubscribed || false,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'firebase_uid' });
+
     } catch (error) {
-      console.error('Error saving bot state to Firestore:', error);
+      console.error('Error saving bot state:', error);
     }
   },
 
@@ -134,9 +206,15 @@ export const databaseService = {
         customLogic: data.customLogic ?? '',
         accountType: (data.accountType as AccountType) || AccountType.PAPER,
         tradingMode: (data.tradingMode as TradingMode) || TradingMode.SPOT,
-        binanceApiKey: '',
-        binanceApiSecret: '',
-        isBinanceConnected: false
+        binanceApiKey: data.binanceApiKey ?? '',
+        binanceApiSecret: data.binanceApiSecret ?? '',
+        isBinanceConnected: data.isBinanceConnected ?? false,
+        mtAccountId: data.mtAccountId ?? '',
+        mtMasterPassword: data.mtMasterPassword ?? '',
+        mtServer: data.mtServer ?? '',
+        isMtConnected: data.isMtConnected ?? false,
+        connectionType: data.connectionType ?? 'BINANCE',
+        isSubscribed: data.isSubscribed ?? false
       };
     } catch (error: any) {
       if (!error.message?.includes('offline')) {
@@ -147,11 +225,55 @@ export const databaseService = {
   },
 
   // --- TRADES ---
+  async openTrade(userId: string, trade: Trade) {
+    try {
+      const docRef = doc(db, 'trades', trade.id);
+      const data = sanitize({ ...trade, userId, updatedAt: serverTimestamp() });
+      await setDoc(docRef, data);
+
+      await supabase.from('trades').insert([{
+        id: trade.id,
+        firebase_uid: userId,
+        symbol: trade.symbol,
+        type: trade.type,
+        lot_size: trade.lotSize,
+        entry_price: trade.entryPrice,
+        status: 'OPEN',
+        account_type: trade.accountType,
+        open_time: new Date(trade.openTime || Date.now()).toISOString()
+      }]);
+    } catch (error) {
+      console.error('Error opening trade:', error);
+    }
+  },
+
+  async closeTrade(userId: string, tradeId: string, closePrice: number, pnl: number) {
+    try {
+      const docRef = doc(db, 'trades', tradeId);
+      await updateDoc(docRef, {
+        closePrice,
+        pnl,
+        status: 'CLOSED',
+        closeTime: Date.now(),
+        updatedAt: serverTimestamp()
+      });
+
+      await supabase.from('trades').update({
+        close_price: closePrice,
+        pnl: pnl,
+        status: 'CLOSED',
+        close_time: new Date().toISOString()
+      }).eq('id', tradeId);
+    } catch (error) {
+      console.error('Error closing trade:', error);
+    }
+  },
+
   async saveTrades(userId: string, trades: Trade[]) {
     if (!trades || trades.length === 0) return;
     try {
+      // 1. Firestore Batch
       const batch = writeBatch(db);
-      
       trades.forEach(t => {
         const tradeRef = doc(db, 'trades', t.id);
         const data = sanitize({
@@ -161,10 +283,26 @@ export const databaseService = {
         });
         batch.set(tradeRef, data, { merge: true });
       });
-
       await batch.commit();
+
+      // 2. Supabase Upsert
+      const supabaseTrades = trades.map(t => ({
+        id: t.id,
+        firebase_uid: userId,
+        symbol: t.symbol,
+        trade_type: t.type,
+        lot_size: t.lotSize,
+        entry_price: t.entryPrice,
+        close_price: t.closePrice,
+        pnl: t.pnl,
+        status: t.status,
+        account_type: t.accountType,
+        created_at: new Date(t.openTime || Date.now()).toISOString()
+      }));
+      await supabase.from('trades').upsert(supabaseTrades);
+
     } catch (error) {
-      console.error('Error saving trades to Firestore:', error);
+      console.error('Error saving trades:', error);
     }
   },
 
@@ -254,9 +392,10 @@ export const databaseService = {
     try {
       const docRef = doc(db, 'profiles', userId);
       await updateDoc(docRef, { balance: newBalance });
+      await supabase.from('users').update({ balance: newBalance }).eq('firebase_uid', userId);
     } catch (error: any) {
        if (!error.message?.includes('offline')) {
-        console.warn('Update balance failed, profile might not exist');
+        console.warn('Update balance failed');
        }
     }
   },
@@ -276,9 +415,20 @@ export const databaseService = {
           realBalance: 0,
           realEquity: 0,
           accountType: AccountType.PAPER,
+          isSubscribed: false,
           createdAt: serverTimestamp()
         });
         await setDoc(docRef, data);
+        
+        // Supabase Entry
+        await supabase.from('users').insert([{
+          firebase_uid: id,
+          email: email,
+          balance: 500,
+          paper_balance: 500,
+          real_balance: 0,
+          created_at: new Date().toISOString()
+        }]);
       }
     } catch (error: any) {
       if (!error.message?.includes('offline')) {
