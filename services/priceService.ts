@@ -271,7 +271,7 @@ const fetchFreshCandles = async (symbol: Symbol, interval: string, limit: number
 /**
  * AGGRESSIVE PRE-SEEDER
  */
-const preseedCache = async () => {
+export const preseedCache = async () => {
     const intervals = ['1m', '5m', '15m', '1h', '4h', '1d'];
     const priority: Symbol[] = ['XAUUSD', 'BTCUSD', 'ETHUSD', 'SOLUSD'];
     const allSymbols = Object.keys(ASSETS) as Symbol[];
@@ -293,4 +293,7 @@ const preseedCache = async () => {
     }, 1500);
 };
 
-preseedCache();
+export const initializePriceService = () => {
+    connectCryptoStream();
+    preseedCache();
+};

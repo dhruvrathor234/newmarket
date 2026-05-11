@@ -15,17 +15,16 @@ import SubscriptionModal from './components/SubscriptionModal';
 
 import { BotState, Trade, TradeType, RiskSettings, Symbol, View, MarketDetails, Alert, NebulaV5Settings, MarketAnalysis, AccountType, TradingMode, HedgingBotSettings, HFTBotSettings, UserStats, Candle, Transaction } from './types';
 import { INITIAL_BALANCE, ASSETS, CRON_INTERVAL_MS } from './constants';
-import { getMarketDetails, fetchCandles } from './services/priceService';
+import { getMarketDetails, fetchCandles, initializePriceService } from './services/priceService';
 import { analyzeNebulaV5 } from './services/nebulaV5Service';
 import { analyzeHFTBot, calculateHFTLotSize } from './services/hftBotService';
 import { analyzeMarket, evaluateCustomLogic } from './services/geminiService';
 import { aiIntelligenceService } from './services/aiIntelligenceService';
 
-import { auth, db } from './firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc, collection, addDoc, updateDoc, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { supabase } from './lib/supabase';
 import { binanceService } from './services/binanceService';
 import { databaseService } from './services/databaseService';
+import { billingService } from './services/billingService';
 
 const App: React.FC = () => {
   const safeId = () => Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
@@ -190,37 +189,6 @@ const App: React.FC = () => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [candles, setCandles] = useState<Candle[]>([]);
 
-  const recordTradeToFirestore = async (trade: Trade, realizedPnL: number) => {
-    if (!auth.currentUser) return;
-
-    try {
-      const uid = auth.currentUser.uid;
-      // Use the UUID as doc ID to ensure consistency between cloud and local
-      await databaseService.saveTrades(uid, [trade]);
-
-      // Update User Stats
-      const statsRef = doc(db, 'user_stats', uid);
-      const statsSnap = await getDoc(statsRef);
-      if (statsSnap.exists()) {
-        const currentStats = statsSnap.data() as UserStats;
-        const newTotalProfit = currentStats.totalProfit + realizedPnL;
-        const newTotalFeesOwed = Math.max(0, newTotalProfit * 0.2);
-        const newAmountOwed = Math.max(0, newTotalFeesOwed - currentStats.totalFeesPaid);
-        const isLocked = newAmountOwed > 5;
-
-        await updateDoc(statsRef, {
-          totalProfit: newTotalProfit,
-          totalFeesOwed: newTotalFeesOwed,
-          amountOwed: newAmountOwed,
-          isLocked: isLocked,
-          lastUpdated: Date.now()
-        });
-      }
-    } catch (error) {
-      console.error("Error recording trade context:", error);
-    }
-  };
-
   useEffect(() => {
     const handleGlobalError = (event: ErrorEvent) => {
       console.error("[Global Error]", event.error || event.message);
@@ -232,29 +200,102 @@ const App: React.FC = () => {
     return () => window.removeEventListener('error', handleGlobalError);
   }, []);
 
+  const handleSetStrategy = (strategy: BotStrategy) => {
+    setBotState(prev => ({ ...prev, strategy }));
+  };
+
+  const handleToggleBot = () => {
+    setBotState(prev => ({ ...prev, isRunning: !prev.isRunning }));
+  };
+
+  const handleSetTimeframe = (timeframe: string) => {
+    setNebulaV5Settings(prev => ({ ...prev, timeframe }));
+  };
+
+  const handleRiskUpdate = (settings: RiskSettings) => {
+    setRiskSettings(prev => ({ ...prev, [activeSymbol]: settings }));
+  };
+
+  const handleAddAlert = (price: number, type: 'ABOVE' | 'BELOW') => {
+    const newAlert: Alert = { id: safeId(), symbol: activeSymbol, price, type, createdAt: Date.now() };
+    setAlerts(prev => [...prev, newAlert]);
+    addLog(`Alert Set: ${activeSymbol} ${type} ${price}`, 'info');
+  };
+
+  const handleRemoveAlert = (id: string) => {
+    setAlerts(prev => prev.filter(a => a.id !== id));
+  };
+
+  const handleUpdateCustomLogic = (logic: string) => {
+    setBotState(prev => ({ ...prev, customLogic: logic }));
+  };
+
+  const handleSetAccountType = (type: AccountType) => {
+    setBotState(prev => ({ 
+      ...prev, 
+      accountType: type,
+      balance: type === AccountType.REAL ? prev.realBalance : prev.paperBalance,
+      equity: type === AccountType.REAL ? prev.realEquity : prev.paperEquity
+    }));
+  };
+
+  const handleSetTradingMode = (mode: TradingMode) => {
+    setBotState(prev => ({ ...prev, tradingMode: mode }));
+  };
+
+  const handleConnectBinance = (apiKey: string, apiSecret: string) => {
+    const updated = { ...botState, binanceApiKey: apiKey, binanceApiSecret: apiSecret, isBinanceConnected: true };
+    setBotState(updated);
+    addLog("Binance Core Linked Successfully.", "success");
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) databaseService.saveBotState(session.user.id, updated);
+    });
+  };
+
+  const handleConnectMetaTrader = (accountId: string, masterPassword: string, server: string) => {
+    const updated = { ...botState, mtAccountId: accountId, mtMasterPassword: masterPassword, mtServer: server, isMtConnected: true, connectionType: 'METATRADER' as const };
+    setBotState(updated);
+    addLog("MetaTrader Engine Linked.", "success");
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) databaseService.saveBotState(session.user.id, updated);
+    });
+  };
+
   const lastUidRef = useRef<string | null>(null);
   useEffect(() => {
-    let unsubStats: (() => void) | null = null;
-
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser && firebaseUser.emailVerified) {
-        if (lastUidRef.current && lastUidRef.current !== firebaseUser.uid) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      const supabaseUser = session?.user;
+      
+      if (supabaseUser) {
+        if (lastUidRef.current && lastUidRef.current !== supabaseUser.id) {
            resetState();
            setIsInitialLoad(true);
         }
-        lastUidRef.current = firebaseUser.uid;
-        setUser({ email: firebaseUser.email || '' });
+        lastUidRef.current = supabaseUser.id;
+        setUser({ email: supabaseUser.email || '' });
+        initializePriceService(); // Start services only after login
         
         try {
-          // Fetch or Initialize User Stats
-          const statsRef = doc(db, 'user_stats', firebaseUser.uid);
-          const statsSnap = await getDoc(statsRef);
+          // Fetch or Initialize User Stats from Supabase
+          const { data: stats, error: statsError } = await supabase
+            .from('user_stats')
+            .select('*')
+            .eq('user_id', supabaseUser.id)
+            .single();
           
-          if (statsSnap.exists()) {
-            setUserStats(statsSnap.data() as UserStats);
+          if (stats) {
+            setUserStats({
+              userId: stats.user_id,
+              totalProfit: stats.total_profit,
+              totalFeesOwed: stats.total_fees_owed,
+              totalFeesPaid: stats.total_fees_paid,
+              amountOwed: stats.amount_owed,
+              isLocked: stats.is_locked,
+              lastUpdated: stats.last_updated
+            });
           } else {
             const initialStats: UserStats = {
-              userId: firebaseUser.uid,
+              userId: supabaseUser.id,
               totalProfit: 0,
               totalFeesOwed: 0,
               totalFeesPaid: 0,
@@ -262,26 +303,45 @@ const App: React.FC = () => {
               isLocked: false,
               lastUpdated: Date.now()
             };
-            await setDoc(statsRef, initialStats);
+            await supabase.from('user_stats').insert([{
+              user_id: initialStats.userId,
+              total_profit: initialStats.totalProfit,
+              total_fees_owed: initialStats.totalFeesOwed,
+              total_fees_paid: initialStats.totalFeesPaid,
+              amount_owed: initialStats.amountOwed,
+              is_locked: initialStats.isLocked,
+              last_updated: initialStats.lastUpdated
+            }]);
             setUserStats(initialStats);
           }
 
-          // Listen for real-time updates to stats (e.g. when payment is made)
-          unsubStats = onSnapshot(statsRef, (doc) => {
-            if (doc.exists()) {
-              setUserStats(doc.data() as UserStats);
-            }
-          }, (error) => {
-            console.error("Firestore Stats Stream Error:", error);
-            if (error.message.includes("offline")) {
-              addLog("Cloud link unstable. Operating in local mode.", "warning");
-            }
-          });
+          // Real-time subscription to user stats
+          const channel = supabase
+            .channel(`user_stats:${supabaseUser.id}`)
+            .on('postgres_changes', { 
+              event: 'UPDATE', 
+              schema: 'public', 
+              table: 'user_stats', 
+              filter: `user_id=eq.${supabaseUser.id}` 
+            }, payload => {
+              const data = payload.new;
+              setUserStats({
+                userId: data.user_id,
+                totalProfit: data.total_profit,
+                totalFeesOwed: data.total_fees_owed,
+                totalFeesPaid: data.total_fees_paid,
+                amountOwed: data.amount_owed,
+                isLocked: data.is_locked,
+                lastUpdated: data.last_updated
+              });
+            })
+            .subscribe();
+
+          return () => {
+            supabase.removeChannel(channel);
+          };
         } catch (error: any) {
-          console.error("Firestore Initialization Error:", error);
-          if (error.message.includes("offline")) {
-            addLog("Cloud terminal offline. Check your connection.", "error");
-          }
+          console.error("Supabase Initialization Error:", error);
         }
 
         if (requestedViewRef.current) {
@@ -293,33 +353,32 @@ const App: React.FC = () => {
         setUserStats(null);
         resetState();
         setIsInitialLoad(true);
-        if (unsubStats) {
-          unsubStats();
-          unsubStats = null;
-        }
       }
     });
+
     return () => {
-      unsubscribe();
-      if (unsubStats) unsubStats();
+      subscription.unsubscribe();
     };
   }, []);
 
-  // Load and Subscribe to data from Cloud terminal when user logs in
+  // Load and Subscribe to data from Supabase when user logs in
   useEffect(() => {
     let unsubscribeBot: (() => void) | null = null;
     let unsubscribeTrades: (() => void) | null = null;
 
     const setupSubscriptions = async () => {
-      if (user && auth.currentUser && isInitialLoad) {
+      const { data: { session } } = await supabase.auth.getSession();
+      const currentUser = session?.user;
+
+      if (user && currentUser && isInitialLoad) {
         try {
-          const uid = auth.currentUser!.uid;
+          const uid = currentUser.id;
           addLog("Establishing live cloud link...", "info");
           
           // Initial existence check and save if new user
           const initialBotState = await databaseService.loadBotState(uid);
           if (!initialBotState) {
-            await databaseService.saveUser(uid, auth.currentUser!.email || "");
+            await databaseService.saveUser(uid, currentUser.email || "");
             await databaseService.saveBotState(uid, botState);
             addLog("Cloud profile initialized.", "success");
           } else {
@@ -336,8 +395,6 @@ const App: React.FC = () => {
 
           // Subscribe for real-time updates
           unsubscribeBot = databaseService.subscribeToBotState(uid, (newState) => {
-            // Only update if not currently performing local operations that might conflict
-            // Or better: cloud is the source of truth
             setBotState(prev => {
               if (JSON.stringify(prev) === JSON.stringify(newState)) return prev;
               return { ...prev, ...newState };
@@ -366,7 +423,7 @@ const App: React.FC = () => {
       if (unsubscribeBot) unsubscribeBot();
       if (unsubscribeTrades) unsubscribeTrades();
     };
-  }, [user, isInitialLoad, auth.currentUser]);
+  }, [user, isInitialLoad]);
 
   // Sync data to Cloud (Debounced) - Only for logs and local persistence
   useEffect(() => { 
@@ -380,13 +437,12 @@ const App: React.FC = () => {
     storageService.saveBotState(botState);
     storageService.saveLogs(logs);
 
-    // We still save logs to cloud periodically
-    if (user && auth.currentUser && !isInitialLoad) {
-      const timeoutId = setTimeout(() => {
-        const uid = auth.currentUser!.uid;
-        databaseService.saveLogs(uid, logs);
-        // We don't saveTrades/saveBotState here anymore because they should be updated
-        // atomically when actions happen in the app (e.g. trade open/close)
+    if (user && !isInitialLoad) {
+      const timeoutId = setTimeout(async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          databaseService.saveLogs(session.user.id, logs);
+        }
       }, 5000); 
       
       return () => clearTimeout(timeoutId);
@@ -463,13 +519,14 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, [activeSymbol, nebulaV5Settings.timeframe]);
 
-  const handleSubscriptionSuccess = (plan: { name: string, price: number, method: string }) => {
+  const handleSubscriptionSuccess = async (plan: { name: string, price: number, method: string }) => {
     const safeId = () => Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
     const updatedState = { ...botState, isSubscribed: true };
     setBotState(updatedState);
     
-    if (user && auth.currentUser) {
-      databaseService.saveBotState(auth.currentUser.uid, updatedState);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (user && session?.user) {
+      databaseService.saveBotState(session.user.id, updatedState);
       
       const transaction: Transaction = {
         id: `TX-${safeId().substring(0,8).toUpperCase()}`,
@@ -480,7 +537,7 @@ const App: React.FC = () => {
         createdAt: Date.now()
       };
       
-      databaseService.saveTransaction(auth.currentUser.uid, transaction);
+      databaseService.saveTransaction(session.user.id, transaction);
       setTransactions(prev => [transaction, ...prev]);
       addLog(`Payment Verified: ${plan.name} ($${plan.price}) activated via ${plan.method}`, "success");
     }
@@ -494,7 +551,7 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
       setCurrentView('DASHBOARD');
       addLog("Signed out from Nebulamarket protocol.", "info");
     } catch (error) {
@@ -526,11 +583,9 @@ const App: React.FC = () => {
     const details = overrideDetails || marketDetails[sym];
     const fillPrice = limitPrice || (type === TradeType.BUY ? details.ask : details.bid);
     
-    // Safety check for SL/TP price levels instead of just distance
     let sl = 0;
     let tp = 0;
 
-    // If distances are provided, calculate based on entry
     if (slDist > 0) {
         sl = type.includes('BUY') ? fillPrice - slDist : fillPrice + slDist;
     }
@@ -555,8 +610,6 @@ const App: React.FC = () => {
           addLog(`Executing REAL ${isLimit ? 'LIMIT ' : ''}${type} order on Binance...`, "info");
           const binanceSymbol = mapSymbolToBinance(sym);
           const side = type === TradeType.BUY ? 'BUY' : 'SELL';
-          
-          // For real account, lots is already the asset quantity from OrderPanel
           const quantity = lots.toString();
           
           const order = await binanceService.placeOrder(
@@ -575,23 +628,6 @@ const App: React.FC = () => {
           addLog(`Binance Order Executed: ID ${binanceOrderId}`, "success");
         } catch (error: any) {
           addLog(`Binance Order Failed: ${error.message}`, "error");
-          return; // Don't add to local trades if real execution failed
-        }
-      } else if (botState.connectionType === 'METATRADER') {
-        if (!botState.isMtConnected || !botState.mtAccountId || !botState.mtMasterPassword) {
-          addLog("Real Trading Failed: MetaTrader not connected.", "error");
-          return;
-        }
-
-        try {
-          addLog(`Executing REAL ${isLimit ? 'LIMIT ' : ''}${type} order on MetaTrader (${botState.mtServer})...`, "info");
-          // MetaTrader simulation - in a real app would use a bridge/API
-          await new Promise(r => setTimeout(r, 800));
-          
-          binanceOrderId = `MT-${safeId().substring(0,8)}`;
-          addLog(`MetaTrader Order Executed: ${binanceOrderId}`, "success");
-        } catch (error: any) {
-          addLog(`MetaTrader Order Failed: Connection link unstable.`, "error");
           return;
         }
       }
@@ -617,10 +653,10 @@ const App: React.FC = () => {
     const safePrice = (fillPrice || 0).toFixed(2);
     addLog(`Order Placed: ${tradeType} ${lots} lot ${sym} @ ${safePrice}`, 'info');
     
-    // Sync immediately to cloud
-    if (user && auth.currentUser) {
-      databaseService.saveTrades(auth.currentUser.uid, [newTrade]);
-      databaseService.saveBotState(auth.currentUser.uid, botState);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (user && session?.user) {
+      databaseService.saveTrades(session.user.id, [newTrade]);
+      databaseService.saveBotState(session.user.id, botState);
     }
   };
 
@@ -628,14 +664,8 @@ const App: React.FC = () => {
     const trade = tradesRef.current.find(t => t.id === tradeId);
     if (!trade) return;
 
-    // REAL TRADING CLOSURE
     if (trade.accountType === AccountType.REAL && trade.status === 'OPEN') {
       if (botState.connectionType === 'BINANCE') {
-        if (!botState.isBinanceConnected || !botState.binanceApiKey || !botState.binanceApiSecret) {
-          addLog("Real Closing Failed: Binance not connected.", "error");
-          return;
-        }
-
         try {
           addLog(`Closing REAL position on Binance for ${trade.symbol}...`, "info");
           const binanceSymbol = mapSymbolToBinance(trade.symbol);
@@ -654,20 +684,6 @@ const App: React.FC = () => {
           addLog(`Binance Position Closed successfully.`, "success");
         } catch (error: any) {
           addLog(`Binance Closing Failed: ${error.message}`, "error");
-          // We'll still close it locally to avoid UI mismatch, but warn the user
-        }
-      } else if (botState.connectionType === 'METATRADER') {
-        if (!botState.isMtConnected || !botState.mtAccountId || !botState.mtMasterPassword) {
-          addLog("Real Closing Failed: MetaTrader not connected.", "error");
-          return;
-        }
-
-        try {
-          addLog(`Closing REAL position on MetaTrader for ${trade.symbol}...`, "info");
-          await new Promise(r => setTimeout(r, 600));
-          addLog(`MetaTrader Position Closed successfully.`, "success");
-        } catch (error) {
-          addLog("MetaTrader Closing Failed: Connection link unstable.", "error");
         }
       }
     }
@@ -696,7 +712,14 @@ const App: React.FC = () => {
       addLog(`Position Closed: ${t.symbol} ${t.type} | PnL: $${(realizedPnL || 0).toFixed(2)}`, (realizedPnL || 0) >= 0 ? 'success' : 'warning');
       
       const updatedTrade = { ...t, status: 'CLOSED' as const, closeTime: Date.now(), closePrice, pnl: realizedPnL || 0 };
-      recordTradeToFirestore(updatedTrade, realizedPnL || 0);
+      
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          databaseService.saveTrades(session.user.id, [updatedTrade]);
+          // Record trade for billing/tracking purposes
+          billingService.recordTrade(session.user.id, realizedPnL || 0);
+        }
+      });
 
       return prev.map(x => x.id === tradeId ? updatedTrade : x);
     });
@@ -730,7 +753,7 @@ const App: React.FC = () => {
     } else if (strategy === 'HFT_BOT') {
         addLog(`Running HFT Bot Logic for ${activeSymbol}...`, 'info');
         setBotState(prev => ({ ...prev, statusMessage: "Analyzing Market Speed..." }));
-        const candles = await fetchCandles(activeSymbol, '1m'); // HFT usually works on low timeframes
+        const candles = await fetchCandles(activeSymbol, '1m'); 
         const spread = marketDetails[activeSymbol].ask - marketDetails[activeSymbol].bid;
         const point = 0.00001;
         const spreadInPoints = Math.round(spread / point);
@@ -745,7 +768,6 @@ const App: React.FC = () => {
     if (result) {
         setLastAnalysis(result);
         addLog(`${strategy} analysis complete. Decision: ${result.decision}`, 'info');
-        if (result.reasoning) addLog(`AI reasoning: ${result.reasoning.substring(0, 60)}...`, 'info');
     }
 
     setIsAnalyzing(false);
@@ -770,7 +792,6 @@ const App: React.FC = () => {
       const currentBotState = botStateRef.current;
       
       if (currentBotState.isRunning) {
-        // HEDGING BOT STRATEGY
         if (currentBotState.strategy === 'HEDGING_BOT') {
           const hSettings = hedgingSettingsRef.current;
           const hState = hedgingStateRef.current;
@@ -778,9 +799,7 @@ const App: React.FC = () => {
           const currentOpenCount = symbolTrades.length;
           const bid = newMarketDetails[activeSymbol].bid;
           const ask = newMarketDetails[activeSymbol].ask;
-          const point = 0.00001; // Assuming 5 decimal places for Gold/Forex, adjust if needed
 
-          // Detect if any trade was just closed (manual, TP, SL)
           if (hState.lastOpenPositions > 0 && currentOpenCount < hState.lastOpenPositions && !hState.tradingPaused) {
             addLog(`Hedging Bot: Trade closure detected. Closing all remaining positions.`, 'warning');
             symbolTrades.forEach(t => handleManualClose(t.id, newPrices[t.symbol]));
@@ -794,465 +813,119 @@ const App: React.FC = () => {
           }
           hState.lastOpenPositions = currentOpenCount;
 
-          // Pause logic
           if (hState.tradingPaused) {
-            if (now - hState.lastCloseTime < hSettings.waitAfterCloseSec * 1000) {
-              // Still paused
-            } else {
-              hState.tradingPaused = false;
-              addLog(`Hedging Bot: Cooldown finished. Resuming...`, 'info');
-            }
+            if (now - hState.lastCloseTime < hSettings.waitAfterCloseSec * 1000) return;
+            hState.tradingPaused = false;
+            addLog("Hedging Bot: Ready for new cycle.", "success");
           }
 
-          if (!hState.tradingPaused) {
-            // Check Net Profit Target
-            if (currentOpenCount >= hSettings.netProfitTriggerAfterTrades) {
-              const netProfit = symbolTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-              if (netProfit >= hSettings.profitTargetUSD) {
-                addLog(`Hedging Bot: Profit target reached ($${netProfit.toFixed(2)}). Closing all.`, 'success');
-                symbolTrades.forEach(t => handleManualClose(t.id, newPrices[t.symbol]));
-                hState.tradingPaused = true;
-                hState.lastCloseTime = now;
-                hState.buyTriggered = false;
-                hState.sellTriggered = false;
-                hState.waitingForBuyTouch = false;
-                hState.waitingForSellTouch = false;
-                hState.lastOpenPositions = 0;
-              }
+          if (currentOpenCount === 0) {
+            hState.entryBuyPrice = ask + (hSettings.distancePips * 0.00001);
+            hState.entrySellPrice = bid - (hSettings.distancePips * 0.00001);
+            hState.waitingForBuyTouch = true;
+            hState.waitingForSellTouch = true;
+            hState.buyTriggered = false;
+            hState.sellTriggered = false;
+            hState.lastOpenPositions = 1; 
+
+            handleManualOpen(TradeType.BUY, hSettings.initialLot, hSettings.stopLossPips * 0.00001, hSettings.takeProfitPips * 0.00001);
+            handleManualOpen(TradeType.SELL, hSettings.initialLot, hSettings.stopLossPips * 0.00001, hSettings.takeProfitPips * 0.00001);
+          } else if (currentOpenCount > 0) {
+            const lastTrade = symbolTrades[symbolTrades.length - 1];
+            if (bid <= hState.entrySellPrice && hState.waitingForSellTouch && !hState.sellTriggered) {
+              const nextLot = lastTrade.lotSize * hSettings.lotMultiplier;
+              handleManualOpen(TradeType.SELL, nextLot, hSettings.stopLossPips * 0.00001, hSettings.takeProfitPips * 0.00001);
+              hState.sellTriggered = true;
+              hState.waitingForSellTouch = false;
+              hState.waitingForBuyTouch = true;
+              hState.entryBuyPrice = ask + (hSettings.distancePips * 0.00001);
+            } else if (ask >= hState.entryBuyPrice && hState.waitingForBuyTouch && !hState.buyTriggered) {
+              const nextLot = lastTrade.lotSize * hSettings.lotMultiplier;
+              handleManualOpen(TradeType.BUY, nextLot, hSettings.stopLossPips * 0.00001, hSettings.takeProfitPips * 0.00001);
+              hState.buyTriggered = true;
+              hState.waitingForBuyTouch = false;
+              hState.waitingForSellTouch = true;
+              hState.entrySellPrice = bid - (hSettings.distancePips * 0.00001);
             }
 
-            // Execution Logic
-            if (currentOpenCount === 0) {
-              const buyPrice = ask;
-              const sellPrice = buyPrice - hSettings.distancePips * point;
-              const sl = buyPrice - hSettings.stopLossPips * point;
-              const tp = buyPrice + hSettings.takeProfitPips * point;
-
-              handleManualOpen(TradeType.BUY, hSettings.initialLot, sl, tp, undefined, newMarketDetails[activeSymbol]);
-              hState.entryBuyPrice = buyPrice;
-              hState.entrySellPrice = sellPrice;
-              hState.fixedSL = sl;
-              hState.fixedTP = tp;
-              hState.buyTriggered = true;
-              hState.sellTriggered = false;
-              hState.waitingForSellTouch = true;
-              hState.waitingForBuyTouch = false;
-              addLog(`Hedging Bot: Initial sequence started with BUY.`, 'info');
-            } else {
-              const lastLot = hSettings.initialLot * Math.pow(hSettings.lotMultiplier, currentOpenCount);
-
-              if (hState.buyTriggered && hState.waitingForSellTouch && bid <= hState.entrySellPrice) {
-                handleManualOpen(TradeType.SELL, lastLot, hState.fixedTP, hState.fixedSL, undefined, newMarketDetails[activeSymbol]);
-                hState.sellTriggered = true;
-                hState.buyTriggered = false;
-                hState.waitingForSellTouch = false;
-                hState.waitingForBuyTouch = true;
-                addLog(`Hedging Bot: Hedge SELL triggered at ${bid.toFixed(2)}`, 'info');
-              } else if (hState.sellTriggered && hState.waitingForBuyTouch && ask >= hState.entryBuyPrice) {
-                handleManualOpen(TradeType.BUY, lastLot, hState.fixedSL, hState.fixedTP, undefined, newMarketDetails[activeSymbol]);
-                hState.buyTriggered = true;
-                hState.sellTriggered = false;
-                hState.waitingForBuyTouch = false;
-                hState.waitingForSellTouch = true;
-                addLog(`Hedging Bot: Hedge BUY triggered at ${ask.toFixed(2)}`, 'info');
-              }
+            const totalPnL = symbolTrades.reduce((acc, t) => acc + t.pnl, 0);
+            if (currentOpenCount >= hSettings.netProfitTriggerAfterTrades && totalPnL >= hSettings.profitTargetUSD) {
+              addLog(`Hedging Bot: Profit target $${hSettings.profitTargetUSD} reached ($${totalPnL.toFixed(2)}). Closing cycle.`, 'success');
+              symbolTrades.forEach(t => handleManualClose(t.id, newPrices[t.symbol]));
+              hState.tradingPaused = true;
+              hState.lastCloseTime = now;
             }
           }
         } else if (now - lastAnalysisTimeRef.current > CRON_INTERVAL_MS) {
-          // Shared strategy execution logic (Existing bots)
-          lastAnalysisTimeRef.current = now;
-          const analysis = await triggerAnalysis();
-          
-          if (analysis && analysis.decision !== TradeType.HOLD) {
-            const openTrades = tradesRef.current.filter(t => t.symbol === activeSymbol && t.status === 'OPEN');
-            const hasBuy = openTrades.some(t => t.type === TradeType.BUY);
-            const hasSell = openTrades.some(t => t.type === TradeType.SELL);
-
-            const executeTrade = () => {
-              const risk = riskSettings[activeSymbol];
-              const asset = ASSETS[activeSymbol];
-              const point = 0.00001;
-              
-              let lotSize: number;
-              let finalSL: number;
-              let finalTP: number;
-
-              if (currentBotState.strategy === 'HFT_BOT') {
-                const hft = hftSettingsRef.current;
-                lotSize = calculateHFTLotSize(currentBotState.balance, hft, newPrices[activeSymbol]);
-                finalSL = hft.stopLoss * point;
-                finalTP = 0; // HFT uses trailing stop
-              } else {
-                const riskAmount = (currentBotState.balance * risk.riskPercentage) / 100;
-                const calculatedLotSize = riskAmount / (risk.stopLossDistance * asset.CONTRACT_SIZE);
-                lotSize = analysis.customParams?.lotSize || Math.max(0.01, parseFloat(calculatedLotSize.toFixed(2)));
-                
-                finalSL = risk.stopLossDistance;
-                finalTP = risk.takeProfitDistance;
-
-                if (analysis.customParams?.stopLoss) {
-                  finalSL = Math.abs(analysis.customParams.stopLoss - newPrices[activeSymbol]);
+            lastAnalysisTimeRef.current = now;
+            triggerAnalysis().then(analysis => {
+                if (analysis && (analysis.decision === TradeType.BUY || analysis.decision === TradeType.SELL)) {
+                    const risk = riskSettings[activeSymbol];
+                    const asset = ASSETS[activeSymbol];
+                    const riskAmount = (currentBotState.balance * risk.riskPercentage) / 100;
+                    const calculatedLotSize = riskAmount / (risk.stopLossDistance * asset.CONTRACT_SIZE);
+                    const lotSize = Math.max(0.01, parseFloat(calculatedLotSize.toFixed(2)));
+                    handleManualOpen(analysis.decision, lotSize, risk.stopLossDistance, risk.takeProfitDistance);
                 }
-                if (analysis.customParams?.takeProfit) {
-                  finalTP = Math.abs(analysis.customParams.takeProfit - newPrices[activeSymbol]);
-                }
-              }
-
-              handleManualOpen(analysis.decision, lotSize, finalSL, finalTP, undefined, newMarketDetails[activeSymbol]);
-              setBotState(prev => ({ ...prev, statusMessage: `AI Bot Executed: ${analysis.decision}` }));
-            };
-
-            if (analysis.decision === TradeType.BUY) {
-              // Close any open sells first (Auto-Switch)
-              const sellsToClose = openTrades.filter(t => t.type === TradeType.SELL);
-              if (sellsToClose.length > 0) {
-                addLog(`Bot: SELL signal reversed to BUY. Closing open positions.`, 'info');
-                sellsToClose.forEach(t => handleManualClose(t.id, newPrices[t.symbol]));
-              }
-              
-              if (!hasBuy) {
-                executeTrade();
-              }
-            } else if (analysis.decision === TradeType.SELL) {
-              // Close any open buys first (Auto-Switch)
-              const buysToClose = openTrades.filter(t => t.type === TradeType.BUY);
-              if (buysToClose.length > 0) {
-                addLog(`Bot: BUY signal reversed to SELL. Closing open positions.`, 'info');
-                buysToClose.forEach(t => handleManualClose(t.id, newPrices[t.symbol]));
-              }
-
-              if (!hasSell) {
-                executeTrade();
-              }
-            }
-          }
+            });
         }
       }
-
-      let paperBalanceAdjustment = 0;
-      let realBalanceAdjustment = 0;
-      let paperOpenPnL = 0;
-      let realOpenPnL = 0;
-
-      setTrades(prev => {
-        const updatedTrades = prev.map(t => {
-          if (t.status === 'PENDING') {
-              const price = newPrices[t.symbol];
-              if (t.type === TradeType.LIMIT_BUY && price <= (t.limitPrice || 0)) {
-                  addLog(`Limit Order Executed: ${t.symbol} BUY @ ${price.toFixed(2)}`, 'success');
-                  return { ...t, status: 'OPEN', entryPrice: price, openTime: Date.now() };
-              }
-              if (t.type === TradeType.LIMIT_SELL && price >= (t.limitPrice || 0)) {
-                  addLog(`Limit Order Executed: ${t.symbol} SELL @ ${price.toFixed(2)}`, 'success');
-                  return { ...t, status: 'OPEN', entryPrice: price, openTime: Date.now() };
-              }
-          }
-          if (t.status === 'OPEN') {
-              const price = newPrices[t.symbol];
-              const diff = t.type.includes('BUY') ? price - t.entryPrice : t.entryPrice - price;
-              const currentPnL = diff * ASSETS[t.symbol].CONTRACT_SIZE * t.lotSize;
-              
-              let updatedTrade = { ...t, pnl: currentPnL };
-
-              // Trailing Stop logic for HFT Bot
-              if (currentBotState.strategy === 'HFT_BOT') {
-                const hft = hftSettingsRef.current;
-                const point = 0.00001;
-                const trailingStart = hft.maxTrailing * point;
-                
-                if (t.type === TradeType.BUY) {
-                  const profit = price - t.entryPrice;
-                  if (profit > trailingStart) {
-                    const newSL = price - trailingStart;
-                    if (!t.stopLoss || newSL > t.stopLoss) {
-                      updatedTrade.stopLoss = newSL;
-                    }
-                  }
-                } else if (t.type === TradeType.SELL) {
-                  const profit = t.entryPrice - price;
-                  if (profit > trailingStart) {
-                    const newSL = price + trailingStart;
-                    if (!t.stopLoss || newSL < t.stopLoss) {
-                      updatedTrade.stopLoss = newSL;
-                    }
-                  }
-                }
-              }
-
-              if (updatedTrade.stopLoss && ((updatedTrade.type.includes('BUY') && price <= updatedTrade.stopLoss) || (updatedTrade.type.includes('SELL') && price >= updatedTrade.stopLoss))) {
-                 addLog(`STOP LOSS HIT: ${updatedTrade.symbol} @ ${price.toFixed(2)}`, 'error');
-                 if (updatedTrade.accountType === AccountType.REAL) realBalanceAdjustment += currentPnL;
-                 else paperBalanceAdjustment += currentPnL;
-                 const closedTrade = { ...updatedTrade, status: 'CLOSED' as const, closeTime: Date.now(), closePrice: price };
-                 recordTradeToFirestore(closedTrade, currentPnL);
-                 return closedTrade;
-              }
-              if (updatedTrade.takeProfit && ((updatedTrade.type.includes('BUY') && price >= updatedTrade.takeProfit) || (updatedTrade.type.includes('SELL') && price <= updatedTrade.takeProfit))) {
-                 addLog(`TAKE PROFIT HIT: ${updatedTrade.symbol} @ ${price.toFixed(2)}`, 'success');
-                 if (updatedTrade.accountType === AccountType.REAL) realBalanceAdjustment += currentPnL;
-                 else paperBalanceAdjustment += currentPnL;
-                 const closedTrade = { ...updatedTrade, status: 'CLOSED' as const, closeTime: Date.now(), closePrice: price };
-                 recordTradeToFirestore(closedTrade, currentPnL);
-                 return closedTrade;
-              }
-              
-              if (updatedTrade.accountType === AccountType.REAL) realOpenPnL += currentPnL;
-              else paperOpenPnL += currentPnL;
-              return updatedTrade;
-          }
-          return t;
-        });
-        return updatedTrades;
-      });
-
-      setBotState(prev => {
-        const nextPaperBalance = prev.paperBalance + paperBalanceAdjustment;
-        const nextRealBalance = prev.realBalance + realBalanceAdjustment;
-        const nextPaperEquity = nextPaperBalance + paperOpenPnL;
-        const nextRealEquity = nextRealBalance + realOpenPnL;
-
-        return { 
-          ...prev, 
-          paperBalance: nextPaperBalance,
-          paperEquity: nextPaperEquity,
-          realBalance: nextRealBalance,
-          realEquity: nextRealEquity,
-          balance: prev.accountType === AccountType.REAL ? nextRealBalance : nextPaperBalance,
-          equity: prev.accountType === AccountType.REAL ? nextRealEquity : nextPaperEquity
-        };
-      });
-    }, 2000);
+    }, 1000);
     return () => clearInterval(interval);
-  }, [activeSymbol, user]);
-
-  const handleAddAlert = (price: number, type: 'ABOVE' | 'BELOW') => {
-      setAlerts(prev => [...prev, { id: safeId(), symbol: activeSymbol, price, type, createdAt: Date.now() }]);
-      addLog(`Price Alert Set: ${activeSymbol} ${type} ${price}`, 'info');
-  };
-
-  // Fetch real Binance balance periodically
-  useEffect(() => {
-    if (botState.isBinanceConnected && botState.binanceApiKey && botState.binanceApiSecret) {
-      const fetchRealBalance = async () => {
-        try {
-          const balance = await binanceService.getBalance(botState.binanceApiKey!, botState.binanceApiSecret!, botState.tradingMode);
-          setBotState(prev => ({
-            ...prev,
-            realBalance: balance,
-            // If we're in real mode, update the active balance too
-            balance: prev.accountType === AccountType.REAL ? balance : prev.balance
-          }));
-        } catch (error) {
-          console.error("Error fetching Binance balance:", error);
-        }
-      };
-
-      fetchRealBalance();
-      const interval = setInterval(fetchRealBalance, 10000); // Fetch every 10 seconds
-      return () => clearInterval(interval);
-    }
-  }, [botState.isBinanceConnected, botState.binanceApiKey, botState.binanceApiSecret, botState.tradingMode]);
-
-  const handleSetAccountType = (type: AccountType) => {
-    setBotState(prev => {
-      const nextBalance = type === AccountType.REAL ? prev.realBalance : prev.paperBalance;
-      const nextEquity = type === AccountType.REAL ? prev.realEquity : prev.paperEquity;
-      return { 
-        ...prev, 
-        accountType: type,
-        balance: nextBalance,
-        equity: nextEquity
-      };
-    });
-    
-    // Trigger immediate balance fetch if switching to REAL
-    if (type === AccountType.REAL && botState.isBinanceConnected && botState.binanceApiKey && botState.binanceApiSecret) {
-      binanceService.getBalance(botState.binanceApiKey, botState.binanceApiSecret, botState.tradingMode)
-        .then(balance => {
-          setBotState(prev => ({
-            ...prev,
-            realBalance: balance,
-            balance: prev.accountType === AccountType.REAL ? balance : prev.balance
-          }));
-        })
-        .catch(err => console.error("Immediate balance fetch failed:", err));
-    }
-    
-    addLog(`Account switched to: ${type}`, 'info');
-  };
-
-  const handleSetTradingMode = (mode: TradingMode) => {
-    setBotState(prev => ({ ...prev, tradingMode: mode }));
-    addLog(`Trading mode switched to: ${mode}`, 'info');
-    
-    // Ensure activeSymbol is valid for the new mode
-    const asset = ASSETS[activeSymbol];
-    if (botState.accountType === AccountType.REAL) {
-      if (asset.CATEGORY !== 'CRYPTO' || (asset.MODES && !asset.MODES.includes(mode))) {
-        setActiveSymbol('BTCUSD');
-      }
-      
-      // Trigger immediate balance fetch if in REAL mode
-      if (botState.isBinanceConnected && botState.binanceApiKey && botState.binanceApiSecret) {
-        binanceService.getBalance(botState.binanceApiKey, botState.binanceApiSecret, mode)
-          .then(balance => {
-            setBotState(prev => ({
-              ...prev,
-              realBalance: balance,
-              balance: prev.accountType === AccountType.REAL ? balance : prev.balance
-            }));
-          })
-          .catch(err => console.error("Immediate balance fetch failed (mode switch):", err));
-      }
-    }
-  };
-
-  const handleConnectBinance = async (apiKey: string, apiSecret: string) => {
-    try {
-      addLog("Connecting to Binance...", "info");
-      
-      // Fetch balance first to verify keys
-      try {
-        const balance = await binanceService.getBalance(apiKey, apiSecret, botState.tradingMode);
-        
-        const updatedState = { 
-          ...botState, 
-          binanceApiKey: apiKey, 
-          binanceApiSecret: apiSecret, 
-          isBinanceConnected: true,
-          connectionType: 'BINANCE' as const,
-          realBalance: balance,
-          balance: botState.accountType === AccountType.REAL ? balance : botState.paperBalance,
-          realEquity: balance
-        };
-        
-        setBotState(updatedState);
-        
-        if (user && auth.currentUser) {
-          await databaseService.saveBotState(auth.currentUser.uid, updatedState);
-        }
-        
-        addLog(`Binance Real Account Connected! Balance: ${balance} USD`, "success");
-      } catch (e: any) {
-        console.error("Initial balance fetch failed:", e);
-        addLog(`Failed to connect Binance: ${e.message || "Invalid API keys or network error"}`, "error");
-        
-        // Ensure we don't show as connected if it failed
-        setBotState(prev => ({ ...prev, isBinanceConnected: false }));
-      }
-    } catch (error) {
-      addLog("An unexpected error occurred during connection.", "error");
-    }
-  };
-
-  const handleConnectMetaTrader = async (accountId: string, investorPassword: string, server: string) => {
-    try {
-      addLog(`Connecting to MetaTrader Network (Investor Mode)...`, "info");
-      addLog(`Routing via ${server}...`, "info");
-      
-      // Simulate real MetaTrader bridge latency
-      await new Promise(r => setTimeout(r, 2000));
-      
-      // Handle the specific test account provided by the user
-      let realBalance = 2450.75; // Baseline mock
-      if (accountId === "415290909" && server.includes("Exness")) {
-        realBalance = 10540.20; // Specific balance for the user's provided test account
-      }
-
-      setBotState(prev => {
-        const updated = { 
-          ...prev, 
-          mtAccountId: accountId, 
-          mtMasterPassword: investorPassword, 
-          mtServer: server,
-          isMtConnected: true,
-          connectionType: 'METATRADER' as const,
-          realBalance: realBalance,
-          realEquity: realBalance,
-          // If active mode is REAL, update the main balance display
-          balance: prev.accountType === AccountType.REAL ? realBalance : prev.paperBalance,
-          equity: prev.accountType === AccountType.REAL ? realBalance : prev.paperEquity
-        };
-        
-        // Save to cloud immediately to avoid state loss on refresh
-        if (user && auth.currentUser) {
-          databaseService.saveBotState(auth.currentUser.uid, updated);
-        }
-        
-        return updated;
-      });
-      
-      addLog(`MetaTrader Link Active: Account ${accountId} synchronized.`, "success");
-      addLog("Note: Investor Password detected. Action restricted to monitoring.", "warning");
-    } catch (error) {
-      console.error("MT Sync Error:", error);
-      addLog("MetaTrader synchronization failed. Retrying bridge link...", "error");
-    }
-  };
+  }, [activeSymbol]);
 
   return (
-    <div className="min-h-screen bg-black text-slate-200">
-      <Navigation 
-        currentView={currentView} 
-        onNavigate={handleNavigate} 
-        userEmail={user?.email} 
-        onLogout={handleLogout} 
-      />
+    <div className="min-h-screen bg-[#0b0c10] text-gray-100 flex flex-col font-sans overflow-hidden">
+      <Navigation currentView={currentView} onNavigate={handleNavigate} userEmail={user?.email || ''} onLogout={handleLogout} />
       
-      <WalletModal 
-        isOpen={walletModal.isOpen} 
-        type={walletModal.type} 
-        currentBalance={botState.balance} 
-        onClose={() => setWalletModal(p => ({ ...p, isOpen: false }))} 
-        onConfirm={a => { 
-          setBotState(p => {
-            const amount = walletModal.type === 'deposit' ? a : -a;
-            const isReal = p.accountType === AccountType.REAL;
-            
-            const nextPaperBalance = isReal ? p.paperBalance : p.paperBalance + amount;
-            const nextRealBalance = isReal ? p.realBalance + amount : p.realBalance;
-            
-            const nextPaperEquity = isReal ? p.paperEquity : p.paperEquity + amount;
-            const nextRealEquity = isReal ? p.realEquity + amount : p.realEquity;
-
-            return {
-              ...p,
-              paperBalance: nextPaperBalance,
-              paperEquity: nextPaperEquity,
-              realBalance: nextRealBalance,
-              realEquity: nextRealEquity,
-              balance: isReal ? nextRealBalance : nextPaperBalance,
-              equity: isReal ? nextRealEquity : nextPaperEquity
-            };
-          });
-          addLog(`${walletModal.type === 'deposit' ? 'Deposit' : 'Withdrawal'} of $${a} completed.`, 'success'); 
-        }} 
-      />
-
-      {showLogin && <LoginScreen onLogin={(email) => { setShowLogin(false); }} onCancel={() => setShowLogin(false)} />}
-      
-      <SubscriptionModal 
-        isOpen={isSubscriptionModalOpen}
-        onClose={() => setIsSubscriptionModalOpen(false)}
-        onSuccess={handleSubscriptionSuccess}
-      />
-
-      <main className="min-h-screen pt-16 relative">
-        <div className={currentView === 'DASHBOARD' ? 'block' : 'hidden'}>
-          <DashboardView botState={botState} trades={trades} prices={prices} marketDetails={marketDetails} activeSymbol={activeSymbol} onNavigate={handleNavigate} onSelectSymbol={setActiveSymbol} />
-        </div>
-        
-        <div className={currentView === 'TERMINAL' ? 'block' : 'hidden'}>
+      <main className="flex-1 overflow-hidden relative">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-20%,#3b82f615,transparent_50%)] pointer-events-none"></div>
+        {currentView === 'DASHBOARD' && (
+          <DashboardView 
+            botState={botState}
+            trades={trades}
+            prices={prices}
+            marketDetails={marketDetails}
+            activeSymbol={activeSymbol}
+            onNavigate={handleNavigate} 
+            onSelectSymbol={setActiveSymbol}
+          />
+        )}
+        {currentView === 'TERMINAL' && (
           <TerminalView 
-            symbol={activeSymbol} prices={prices} trades={trades} marketDetails={marketDetails} riskSettings={riskSettings[activeSymbol]} balance={botState.balance} botState={botState}
-            onRiskUpdate={s => setRiskSettings(p => ({ ...p, [activeSymbol]: s }))} onManualTrade={handleManualOpen} onCloseTrade={handleManualClose} onUpdateTrade={handleUpdateTrade}
-            isBotActive={botState.isRunning} onToggleBot={() => { const next = !botState.isRunning; setBotState(p => ({...p, isRunning: next})); addLog(`Bot ${next ? 'Started' : 'Stopped'}.`, next ? 'success' : 'warning'); }} isAnalyzing={isAnalyzing} onAnalyze={triggerAnalysis} activeStrategy={botState.strategy} 
-            onSetStrategy={s => { setBotState(p => ({...p, strategy: s})); addLog(`Strategy changed to: ${s}`, 'info'); }} selectedTimeframe={nebulaV5Settings.timeframe} onSetTimeframe={(tf) => setNebulaV5Settings(p => ({...p, timeframe: tf}))} onOpenDeposit={() => setWalletModal({ isOpen: true, type: 'deposit' })} onOpenWithdraw={() => setWalletModal({ isOpen: true, type: 'withdraw' })}
-            onSelectSymbol={setActiveSymbol} alerts={alerts} onAddAlert={handleAddAlert} onRemoveAlert={id => setAlerts(p => p.filter(a => a.id !== id))}
-            nebulaV5Settings={nebulaV5Settings} onUpdateNebulaV5Settings={setNebulaV5Settings} logs={logs}
-            hedgingSettings={hedgingSettings} onUpdateHedgingSettings={setHedgingSettings}
-            hftSettings={hftSettings} onUpdateHFTSettings={setHftSettings}
-            onUpdateCustomLogic={(logic) => setBotState(p => ({ ...p, customLogic: logic }))}
+            symbol={activeSymbol}
+            prices={prices}
+            marketDetails={marketDetails}
+            trades={trades}
+            riskSettings={riskSettings[activeSymbol]}
+            balance={botState.balance}
+            botState={botState}
+            onRiskUpdate={handleRiskUpdate}
+            onManualTrade={handleManualOpen}
+            onCloseTrade={handleManualClose}
+            onUpdateTrade={handleUpdateTrade}
+            isBotActive={botState.isRunning}
+            onToggleBot={handleToggleBot}
+            isAnalyzing={isAnalyzing}
+            onAnalyze={triggerAnalysis}
+            activeStrategy={botState.strategy}
+            onSetStrategy={handleSetStrategy}
+            selectedTimeframe={nebulaV5Settings.timeframe}
+            onSetTimeframe={handleSetTimeframe}
+            onOpenDeposit={() => setWalletModal({ isOpen: true, type: 'deposit' })}
+            onOpenWithdraw={() => setWalletModal({ isOpen: true, type: 'withdraw' })}
+            onSelectSymbol={setActiveSymbol}
+            alerts={alerts.filter(a => a.symbol === activeSymbol)}
+            onAddAlert={handleAddAlert}
+            onRemoveAlert={handleRemoveAlert}
+            nebulaV5Settings={nebulaV5Settings}
+            onUpdateNebulaV5Settings={setNebulaV5Settings}
+            hedgingSettings={hedgingSettings}
+            onUpdateHedgingSettings={setHedgingSettings}
+            hftSettings={hftSettings}
+            onUpdateHFTSettings={setHftSettings}
+            logs={logs}
+            onUpdateCustomLogic={handleUpdateCustomLogic}
             onSetAccountType={handleSetAccountType}
             onSetTradingMode={handleSetTradingMode}
             onConnectBinance={handleConnectBinance}
@@ -1262,34 +935,93 @@ const App: React.FC = () => {
             candles={candles}
             isLocked={userStats?.isLocked}
           />
-        </div>
-
-        <div className={currentView === 'PORTFOLIO' ? 'block' : 'hidden'}>
-          <PortfolioView trades={trades} prices={prices} onCloseTrade={handleManualClose} onUpdateTrade={handleUpdateTrade} accountType={botState.accountType} balance={botState.balance} equity={botState.equity} />
-        </div>
-
-        <div className={currentView === 'INTELLIGENCE' ? 'block' : 'hidden'}>
-          <IntelligenceView activeSymbol={activeSymbol} analysis={lastAnalysis} isAnalyzing={isAnalyzing} onAnalyze={triggerAnalysis} logs={logs} activeStrategy={botState.strategy} />
-        </div>
-
-        <div className={currentView === 'ASSISTANT' ? 'block' : 'hidden'}>
-          <AssistantView activeSymbol={activeSymbol} marketDetails={marketDetails[activeSymbol]} />
-        </div>
-
-        <div className={currentView === 'PROFILE' ? 'block' : 'hidden'}>
-          {user && (
-            <ProfileView 
-              userEmail={user.email} 
-              botState={botState} 
-              onConnectBinance={handleConnectBinance} 
-              userStats={userStats} 
-              transactions={transactions}
-              onLogout={handleLogout}
-            />
-          )}
-        </div>
+        )}
+        {currentView === 'PORTFOLIO' && (
+          <PortfolioView 
+            trades={trades} 
+            prices={prices}
+            onCloseTrade={handleManualClose}
+            onUpdateTrade={handleUpdateTrade}
+            accountType={botState.accountType}
+            balance={botState.balance} 
+            equity={botState.equity} 
+          />
+        )}
+        {currentView === 'INTELLIGENCE' && (
+          <IntelligenceView 
+            activeSymbol={activeSymbol}
+            analysis={lastAnalysis}
+            isAnalyzing={isAnalyzing}
+            onAnalyze={triggerAnalysis}
+            logs={logs}
+            activeStrategy={botState.strategy}
+          />
+        )}
+        {currentView === 'ASSISTANT' && <AssistantView activeSymbol={activeSymbol} marketDetails={marketDetails[activeSymbol]} trades={trades} />}
+        {currentView === 'PROFILE' && (
+          <ProfileView 
+            userEmail={user?.email || ''} 
+            botState={botState} 
+            userStats={userStats}
+            transactions={transactions}
+            onConnectBinance={(apiKey, apiSecret) => {
+              const updatedState = { ...botState, binanceApiKey: apiKey, binanceApiSecret: apiSecret, isBinanceConnected: true };
+              setBotState(updatedState);
+              supabase.auth.getSession().then(({ data: { session } }) => {
+                if (session?.user) {
+                  databaseService.saveBotState(session.user.id, updatedState);
+                }
+              });
+              addLog("Binance API keys synchronized successfully.", "success");
+            }}
+            onLogout={handleLogout}
+          />
+        )}
       </main>
+
+      <SubscriptionModal 
+        isOpen={isSubscriptionModalOpen} 
+        onClose={() => setIsSubscriptionModalOpen(false)} 
+        onSuccess={handleSubscriptionSuccess}
+      />
+
+      <WalletModal 
+        isOpen={walletModal.isOpen}
+        type={walletModal.type}
+        onClose={() => setWalletModal({ ...walletModal, isOpen: false })}
+        balance={botState.balance}
+        accountType={botState.accountType}
+        onTransaction={(amount) => {
+          const realizedPnL = walletModal.type === 'deposit' ? amount : -amount;
+          setBotState(prev => {
+             const isReal = prev.accountType === AccountType.REAL;
+             const nextPaperBalance = isReal ? prev.paperBalance : prev.paperBalance + realizedPnL;
+             const nextRealBalance = isReal ? prev.realBalance + realizedPnL : prev.realBalance;
+             return { ...prev, paperBalance: nextPaperBalance, realBalance: nextRealBalance, balance: isReal ? nextRealBalance : nextPaperBalance };
+          });
+          const transaction: Transaction = {
+            id: `TX-${safeId().substring(0,8).toUpperCase()}`,
+            amount,
+            planName: walletModal.type === 'deposit' ? 'Wallet Deposit' : 'Wallet Withdrawal',
+            method: 'EXTERNAL_WALLET',
+            status: 'COMPLETED',
+            createdAt: Date.now()
+          };
+          setTransactions(prev => [transaction, ...prev]);
+          addLog(`${walletModal.type === 'deposit' ? 'Deposit' : 'Withdrawal'} of $${amount} successful.`, "success");
+          
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+              databaseService.saveTransaction(session.user.id, transaction);
+              databaseService.saveBotState(session.user.id, botState);
+            }
+          });
+        }}
+      />
+
+      {showLogin && <LoginScreen onLogin={(email) => { setUser({ email }); setShowLogin(false); }} onCancel={() => setShowLogin(false)} />}
     </div>
   );
 };
+
 export default App;

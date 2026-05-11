@@ -11,25 +11,25 @@ dotenv.config({ override: true });
 // Fix for ESM default import issues with binance-api-node
 const Binance = (BinanceFactory as any).default || BinanceFactory;
 
-// Prioritize user-provided GEMINI_API_KEY from .env or Settings
+// Prioritize user-provided VITE_GEMINI_API_KEY from .env or Settings
 // Fallback to API_KEY only if it looks like a real key (not a placeholder)
 const getGeminiKey = () => {
-  const envKey = process.env.GEMINI_API_KEY;
+  const envKey = process.env.VITE_GEMINI_API_KEY;
   const platformKey = process.env.API_KEY;
-  
+
   const isPlaceholder = (key: string | undefined) => {
     if (!key) return true;
-    const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'GEMINI_API_KEY'];
+    const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'VITE_GEMINI_API_KEY'];
     return placeholders.some(p => key.toUpperCase().includes(p.toUpperCase()));
   };
 
   if (envKey && !isPlaceholder(envKey)) return envKey;
   if (platformKey && !isPlaceholder(platformKey)) return platformKey;
-  
+
   return envKey || platformKey || "";
 };
 
-const GEMINI_API_KEY = getGeminiKey();
+const VITE_GEMINI_API_KEY = getGeminiKey();
 
 // --- IN-MEMORY CACHE ---
 const cache: Record<string, { data: any, timestamp: number, ttl: number }> = {
@@ -69,15 +69,15 @@ const withRetry = async (fn: () => Promise<any>, retries = 3, delay = 2000) => {
 
 const isPlaceholder = (key: string | undefined) => {
   if (!key) return true;
-  const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'GEMINI_API_KEY'];
+  const placeholders = ['YOUR_KEY_HERE', 'YOUR_API_KEY', 'PASTE_KEY_HERE', 'TODO', 'VITE_GEMINI_API_KEY'];
   return placeholders.some(p => key.toUpperCase().includes(p.toUpperCase()));
 };
 
-if (GEMINI_API_KEY && !isPlaceholder(GEMINI_API_KEY)) {
-  console.log(`[Neural Core] API Key detected. Prefix: ${GEMINI_API_KEY.substring(0, 4)}... (Length: ${GEMINI_API_KEY.length})`);
+if (VITE_GEMINI_API_KEY && !isPlaceholder(VITE_GEMINI_API_KEY)) {
+  console.log(`[Neural Core] API Key detected. Prefix: ${VITE_GEMINI_API_KEY.substring(0, 4)}... (Length: ${VITE_GEMINI_API_KEY.length})`);
 } else {
-  console.warn("[Neural Core] No valid API Key found. Please set GEMINI_API_KEY in the Settings menu or .env file.");
-  if (process.env.GEMINI_API_KEY) console.warn(`[Neural Core] GEMINI_API_KEY exists but might be a placeholder: ${process.env.GEMINI_API_KEY.substring(0, 4)}...`);
+  console.warn("[Neural Core] No valid API Key found. Please set VITE_GEMINI_API_KEY in the Settings menu or .env file.");
+  if (process.env.VITE_GEMINI_API_KEY) console.warn(`[Neural Core] VITE_GEMINI_API_KEY exists but might be a placeholder: ${process.env.VITE_GEMINI_API_KEY.substring(0, 4)}...`);
   if (process.env.API_KEY) console.warn(`[Neural Core] API_KEY exists but might be a placeholder: ${process.env.API_KEY.substring(0, 4)}...`);
 }
 
@@ -91,9 +91,9 @@ app.get("/api/health", (req, res) => {
   res.json({
     status: "ok",
     ai: {
-      keyDetected: !!GEMINI_API_KEY,
-      keyLength: GEMINI_API_KEY?.length || 0,
-      isPlaceholder: isPlaceholder(GEMINI_API_KEY)
+      keyDetected: !!VITE_GEMINI_API_KEY,
+      keyLength: VITE_GEMINI_API_KEY?.length || 0,
+      isPlaceholder: isPlaceholder(VITE_GEMINI_API_KEY)
     },
     env: process.env.NODE_ENV,
     vercel: !!process.env.VERCEL
@@ -104,7 +104,7 @@ app.get("/api/health", (req, res) => {
 
 app.post("/api/binance/balance", async (req, res) => {
   const { apiKey, apiSecret, tradingMode } = req.body;
-  
+
   const trimmedKey = apiKey?.toString().trim();
   const trimmedSecret = apiSecret?.toString().trim();
 
@@ -113,17 +113,17 @@ app.post("/api/binance/balance", async (req, res) => {
   }
 
   try {
-    const client = Binance({ 
-      apiKey: trimmedKey, 
-      apiSecret: trimmedSecret, 
+    const client = Binance({
+      apiKey: trimmedKey,
+      apiSecret: trimmedSecret,
       useServerTime: true,
-      recvWindow: 60000 
+      recvWindow: 60000
     });
 
     if (tradingMode === 'FUTURES') {
       console.log("[Binance] Fetching Futures Balance...");
       const accountInfo = await client.futuresAccountInfo();
-      
+
       if (!accountInfo || !accountInfo.assets) {
         console.error("[Binance] Invalid Futures response:", accountInfo);
         return res.status(500).json({ error: "Invalid response from Binance Futures API" });
@@ -134,7 +134,7 @@ app.post("/api/binance/balance", async (req, res) => {
         free: a.availableBalance,
         locked: (parseFloat(a.walletBalance) - parseFloat(a.availableBalance)).toString()
       }));
-      
+
       const nonZero = balances.filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
       console.log(`[Binance] Futures Non-Zero Balances:`, JSON.stringify(nonZero));
 
@@ -151,7 +151,7 @@ app.post("/api/binance/balance", async (req, res) => {
 
       const responseData = [...balances];
       responseData.push({ asset: 'TOTAL_ESTIMATE_USDT', free: totalEstUSDT.toString(), locked: '0' });
-      
+
       res.json(responseData);
     } else {
       console.log("[Binance] Fetching Spot Balance...");
@@ -164,14 +164,14 @@ app.post("/api/binance/balance", async (req, res) => {
         console.error("[Binance] Invalid Spot response:", accountInfo);
         return res.status(500).json({ error: "Invalid response from Binance Spot API" });
       }
-      
+
       const nonZero = accountInfo.balances.filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
       console.log(`[Binance] Spot Non-Zero Balances:`, JSON.stringify(nonZero));
-      
+
       // Calculate estimated total in USDT
       let totalEstUSDT = 0;
       const stablecoins = ['USDT', 'USDC', 'BUSD', 'FDUSD', 'TUSD', 'DAI'];
-      
+
       nonZero.forEach((b: any) => {
         const amount = parseFloat(b.free) + parseFloat(b.locked);
         if (stablecoins.includes(b.asset)) {
@@ -188,18 +188,18 @@ app.post("/api/binance/balance", async (req, res) => {
       });
 
       console.log(`[Binance] Estimated Total Balance: ${totalEstUSDT.toFixed(4)} USDT`);
-      
+
       // We return the balances array but also include the total estimate if needed
       // Actually, let's just return the balances array as before to keep compatibility,
       // but we'll add a special 'TOTAL_ESTIMATE' entry at the end.
       const responseData = [...accountInfo.balances];
       responseData.push({ asset: 'TOTAL_ESTIMATE_USDT', free: totalEstUSDT.toString(), locked: '0' });
-      
+
       res.json(responseData);
     }
   } catch (error: any) {
     console.error("Binance balance error:", error);
-    res.status(500).json({ 
+    res.status(500).json({
       error: error.message || "Failed to fetch Binance balance",
       code: error.code,
       details: error.toString()
@@ -217,7 +217,7 @@ app.post("/api/binance/order", async (req, res) => {
     const client = Binance({ apiKey, apiSecret, useServerTime: true });
     if (tradingMode === 'FUTURES') {
       if (leverage) {
-        try { await client.futuresLeverage({ symbol, leverage }); } catch (e) {}
+        try { await client.futuresLeverage({ symbol, leverage }); } catch (e) { }
       }
       const orderOptions: any = { symbol, side, quantity, type: type || 'MARKET' };
       if (type === 'LIMIT' && price) {
@@ -248,10 +248,10 @@ app.get("/api/ai/economic-events", async (req, res) => {
   if (cache.economicEvents.data && (now - cache.economicEvents.timestamp < cache.economicEvents.ttl)) {
     return res.json(cache.economicEvents.data);
   }
-  if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) {
+  if (!VITE_GEMINI_API_KEY || isPlaceholder(VITE_GEMINI_API_KEY)) {
     return res.status(500).json({ error: "Neural core offline." });
   }
-  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  const ai = new GoogleGenAI({ apiKey: VITE_GEMINI_API_KEY });
   try {
     const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-2.0-flash",
@@ -288,20 +288,20 @@ app.get("/api/ai/economic-events", async (req, res) => {
 
 app.post("/api/ai/analyze-market", async (req, res) => {
   const { symbol } = req.body;
-  if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
-  
+  if (!VITE_GEMINI_API_KEY || isPlaceholder(VITE_GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
+
   const now = Date.now();
   const symbolCache = cache.marketAnalysis.data[symbol];
   if (symbolCache && (now - symbolCache.timestamp < cache.marketAnalysis.ttl)) {
     return res.json(symbolCache.data);
   }
 
-  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  const ai = new GoogleGenAI({ apiKey: VITE_GEMINI_API_KEY });
   try {
-    const response = await withRetry(() => ai.models.generateContent({ 
-      model: "gemini-2.0-flash", 
-      contents: `Analyze ${symbol} market news and sentiment. Provide technical and fundamental insights.`, 
-      config: { tools: [{ googleSearch: {} }] } 
+    const response = await withRetry(() => ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: `Analyze ${symbol} market news and sentiment. Provide technical and fundamental insights.`,
+      config: { tools: [{ googleSearch: {} }] }
     }));
     const text = response.text || "{}";
     const cleaned = text.replace(/```(?:json)?\s*([\s\S]*?)\s*```/g, '$1').trim();
@@ -309,15 +309,15 @@ app.post("/api/ai/analyze-market", async (req, res) => {
     const sources = (response.candidates?.[0]?.groundingMetadata?.groundingChunks || [])
       .filter((c: any) => c.web?.uri)
       .map((c: any) => ({ title: c.web.title, url: c.web.uri }));
-    
+
     const result = { ...data, sources };
     cache.marketAnalysis.data[symbol] = { data: result, timestamp: now };
     res.json(result);
   } catch (error: any) {
     console.error("[Neural Core] Market Analysis Error:", error);
     if (error.message?.includes("leaked")) {
-      return res.status(403).json({ 
-        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
+      return res.status(403).json({
+        error: "Neural core key compromised. Please update VITE_GEMINI_API_KEY in Settings.",
         details: error.message
       });
     }
@@ -327,11 +327,11 @@ app.post("/api/ai/analyze-market", async (req, res) => {
 
 app.post("/api/ai/evaluate-logic", async (req, res) => {
   const { symbol, price, logic } = req.body;
-  if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
-  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  if (!VITE_GEMINI_API_KEY || isPlaceholder(VITE_GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
+  const ai = new GoogleGenAI({ apiKey: VITE_GEMINI_API_KEY });
   try {
-    const response = await withRetry(() => ai.models.generateContent({ 
-      model: "gemini-2.0-flash", 
+    const response = await withRetry(() => ai.models.generateContent({
+      model: "gemini-2.0-flash",
       contents: `Evaluate logic: ${logic} for ${symbol} at ${price}`,
       config: { responseMimeType: "application/json" }
     }));
@@ -344,24 +344,24 @@ app.post("/api/ai/evaluate-logic", async (req, res) => {
 
 app.post("/api/ai/chat", async (req, res) => {
   const { message, contextData, imageBase64 } = req.body;
-  if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
+  if (!VITE_GEMINI_API_KEY || isPlaceholder(VITE_GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
 
-  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  const ai = new GoogleGenAI({ apiKey: VITE_GEMINI_API_KEY });
   const parts: any[] = [];
   if (imageBase64) parts.push({ inlineData: { data: imageBase64.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, ""), mimeType: "image/png" } });
   parts.push({ text: `Context: ${contextData}\n\nUser: ${message}` });
   try {
-    const response = await withRetry(() => ai.models.generateContent({ 
-      model: "gemini-2.0-flash", 
-      contents: { parts }, 
-      config: { tools: [{ googleSearch: {} }] } 
+    const response = await withRetry(() => ai.models.generateContent({
+      model: "gemini-2.0-flash",
+      contents: { parts },
+      config: { tools: [{ googleSearch: {} }] }
     }));
     res.json({ text: response.text || "No response." });
   } catch (error: any) {
     console.error("[Neural Core] Chat Error:", error);
     if (error.message?.includes("leaked")) {
-      return res.status(403).json({ 
-        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
+      return res.status(403).json({
+        error: "Neural core key compromised. Please update VITE_GEMINI_API_KEY in Settings.",
         details: error.message
       });
     }
@@ -371,8 +371,8 @@ app.post("/api/ai/chat", async (req, res) => {
 
 app.post("/api/ai/verify-identity", async (req, res) => {
   const { frontBase64, backBase64 } = req.body;
-  if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
-  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  if (!VITE_GEMINI_API_KEY || isPlaceholder(VITE_GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
+  const ai = new GoogleGenAI({ apiKey: VITE_GEMINI_API_KEY });
   try {
     const response = await withRetry(() => ai.models.generateContent({
       model: "gemini-2.0-flash",
@@ -393,8 +393,8 @@ app.post("/api/ai/verify-identity", async (req, res) => {
 });
 
 app.post("/api/ai/backtest-data", async (req, res) => {
-  if (!GEMINI_API_KEY || isPlaceholder(GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
-  const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+  if (!VITE_GEMINI_API_KEY || isPlaceholder(VITE_GEMINI_API_KEY)) return res.status(500).json({ error: "Offline" });
+  const ai = new GoogleGenAI({ apiKey: VITE_GEMINI_API_KEY });
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.0-flash",
@@ -405,8 +405,8 @@ app.post("/api/ai/backtest-data", async (req, res) => {
   } catch (error: any) {
     console.error("[Neural Core] Backtest Data Error:", error);
     if (error.message?.includes("leaked")) {
-      return res.status(403).json({ 
-        error: "Neural core key compromised. Please update GEMINI_API_KEY in Settings.",
+      return res.status(403).json({
+        error: "Neural core key compromised. Please update VITE_GEMINI_API_KEY in Settings.",
         details: error.message
       });
     }

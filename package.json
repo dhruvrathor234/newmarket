@@ -10,26 +10,25 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^1.30.0",
-    "@supabase/supabase-js": "^2.104.1",
-    "binance-api-node": "^0.13.8",
-    "dotenv": "^17.3.1",
+    "@google/genai": "^1.52.0",
+    "@supabase/supabase-js": "^2.105.4",
+    "binance-api-node": "^0.13.9",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "firebase": "^12.8.0",
     "framer-motion": "^12.38.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lightweight-charts": "4.1.1",
     "lucide-react": "^0.554.0",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "recharts": "^3.5.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "recharts": "^3.8.1",
     "tsx": "^4.21.0"
   },
   "devDependencies": {
-    "@types/node": "^22.14.0",
-    "@vitejs/plugin-react": "^5.0.0",
-    "typescript": "~5.8.2",
-    "vite": "^6.2.0"
+    "@types/node": "^22.19.18",
+    "@vitejs/plugin-react": "^5.2.0",
+    "typescript": "~5.8.3",
+    "vite": "^6.4.2"
   }
 }

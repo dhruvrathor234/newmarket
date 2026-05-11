@@ -1,8 +1,7 @@
 
 import React, { useState } from 'react';
 import { X, Send, Mail, MessageSquare, ShieldCheck, CheckCircle2 } from 'lucide-react';
-import { db, auth } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 
 interface SupportModalProps {
   isOpen: boolean;
@@ -26,15 +25,20 @@ const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) => {
     setError('');
 
     try {
-      await addDoc(collection(db, 'support_tickets'), {
-        userId: auth.currentUser?.uid || 'anonymous',
-        userEmail: auth.currentUser?.email || 'not-signed-in',
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+
+      const { error: insertError } = await supabase.from('support_tickets').insert([{
+        user_id: user?.id || 'anonymous',
+        user_email: user?.email || 'not-signed-in',
         subject,
         message,
         status: 'OPEN',
-        createdAt: serverTimestamp(),
-        recipient: 'nebulamarketai@gmail.com'
-      });
+        recipient: 'nebulamarketai@gmail.com',
+        created_at: new Date().toISOString()
+      }]);
+
+      if (insertError) throw insertError;
 
       setIsSent(true);
       setTimeout(() => {

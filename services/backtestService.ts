@@ -20,7 +20,7 @@ export const calculateBacktestReport = (candles: Candle[], markers: ChartMarker[
         const exitPrice = candle.open;
         const pnl = (activeTrade.entryPrice - exitPrice) * 10;
         const pnlPercentage = ((activeTrade.entryPrice - exitPrice) / activeTrade.entryPrice) * 100;
-        
+
         trades.push({
           id: `BT-${trades.length}`,
           type: TradeType.SELL,
@@ -35,7 +35,7 @@ export const calculateBacktestReport = (candles: Candle[], markers: ChartMarker[
         currentBalance += pnl;
         activeTrade = null;
       }
-      
+
       if (!activeTrade) {
         activeTrade = {
           type: TradeType.BUY,
@@ -77,8 +77,8 @@ export const calculateBacktestReport = (candles: Candle[], markers: ChartMarker[
   if (activeTrade && candles.length > 0) {
     const lastCandle = candles[candles.length - 1];
     const exitPrice = lastCandle.close;
-    const pnl = activeTrade.type === TradeType.BUY 
-      ? (exitPrice - activeTrade.entryPrice) * 10 
+    const pnl = activeTrade.type === TradeType.BUY
+      ? (exitPrice - activeTrade.entryPrice) * 10
       : (activeTrade.entryPrice - exitPrice) * 10;
     const pnlPercentage = activeTrade.type === TradeType.BUY
       ? ((exitPrice - activeTrade.entryPrice) / activeTrade.entryPrice) * 100
@@ -102,7 +102,7 @@ export const calculateBacktestReport = (candles: Candle[], markers: ChartMarker[
   const wins = trades.filter(t => t.status === 'WIN').length;
   const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
   const netProfit = currentBalance - initialBalance;
-  
+
   const grossProfit = trades.filter(t => t.pnl > 0).reduce((acc, t) => acc + t.pnl, 0);
   const grossLoss = Math.abs(trades.filter(t => t.pnl < 0).reduce((acc, t) => acc + t.pnl, 0));
   const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit;
@@ -110,7 +110,7 @@ export const calculateBacktestReport = (candles: Candle[], markers: ChartMarker[
   let peak = initialBalance;
   let maxDrawdown = 0;
   let runningBalance = initialBalance;
-  
+
   trades.forEach(t => {
     runningBalance += t.pnl;
     if (runningBalance > peak) peak = runningBalance;
@@ -148,11 +148,11 @@ export const runStrategyBacktest = async (
   }
 
   // For all other strategies, we use Gemini to interpret and generate signals
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  
+  const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
+
   // Sample candles to fit in context
   const sampledCandles = candles.filter((_, i) => i % 5 === 0);
-  
+
   let strategyDescription = "";
   switch (strategy) {
     case 'SENTIMENT':

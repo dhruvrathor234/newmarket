@@ -1,5 +1,5 @@
-import { db, auth } from '../firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, addDoc, onSnapshot } from 'firebase/firestore';
+
+import { supabase } from '../lib/supabase';
 
 export interface UserBillingInfo {
   tradeCount: number;
@@ -11,87 +11,110 @@ export interface UserBillingInfo {
 
 export const billingService = {
   subscribeToBillingInfo(userId: string, callback: (info: UserBillingInfo) => void) {
-    return onSnapshot(doc(db, 'users', userId), (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
+    // Initial fetch
+    supabase
+      .from('users')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          callback({
+            tradeCount: data.trade_count || 0,
+            netProfit: data.net_profit || 0,
+            unpaidProfitShare: data.unpaid_profit_share || 0,
+            isServicePaused: data.is_service_paused || false,
+            lastPaymentDate: data.last_payment_date,
+          });
+        }
+      });
+
+    return supabase
+      .channel(`public:users:user_id=eq.${userId}`)
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'users', 
+        filter: `user_id=eq.${userId}` 
+      }, payload => {
+        const data = payload.new;
         callback({
-          tradeCount: data.tradeCount || 0,
-          netProfit: data.netProfit || 0,
-          unpaidProfitShare: data.unpaidProfitShare || 0,
-          isServicePaused: data.isServicePaused || false,
-          lastPaymentDate: data.lastPaymentDate,
+          tradeCount: data.trade_count || 0,
+          netProfit: data.net_profit || 0,
+          unpaidProfitShare: data.unpaid_profit_share || 0,
+          isServicePaused: data.is_service_paused || false,
+          lastPaymentDate: data.last_payment_date,
         });
-      } else {
-        // Initialize if not exists
-        setDoc(doc(db, 'users', userId), {
-          uid: userId,
-          email: auth.currentUser?.email || '',
-          tradeCount: 0,
-          netProfit: 0,
-          unpaidProfitShare: 0,
-          isServicePaused: false,
-        });
-      }
-    });
+      })
+      .subscribe();
   },
 
   async recordTrade(userId: string, pnl: number) {
-    const userRef = doc(db, 'users', userId);
-    const userDoc = await getDoc(userRef);
+    const { data, error: fetchError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
     
-    if (!userDoc.exists()) {
-      await setDoc(userRef, {
-        uid: userId,
-        email: auth.currentUser?.email || '',
-        tradeCount: 1,
-        netProfit: pnl,
-        unpaidProfitShare: 0,
-        isServicePaused: false,
-      });
+    if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+    
+    if (!data) {
+      await supabase.from('users').insert([{
+        user_id: userId,
+        trade_count: 1,
+        net_profit: pnl,
+        unpaid_profit_share: 0,
+        is_service_paused: false,
+      }]);
     } else {
-      const data = userDoc.data();
-      const newTradeCount = (data.tradeCount || 0) + 1;
-      const newNetProfit = (data.netProfit || 0) + pnl;
+      const newTradeCount = (data.trade_count || 0) + 1;
+      const newNetProfit = (data.net_profit || 0) + pnl;
       
-      let unpaidProfitShare = data.unpaidProfitShare || 0;
-      let isServicePaused = data.isServicePaused || false;
+      let unpaidProfitShare = data.unpaid_profit_share || 0;
+      let isServicePaused = data.is_service_paused || false;
 
       // If user hits 10 trades, calculate 20% profit share
       if (newTradeCount >= 10 && newNetProfit > 0) {
         unpaidProfitShare = newNetProfit * 0.2;
-        // If they haven't paid, pause service
         if (unpaidProfitShare > 0) {
           isServicePaused = true;
         }
       }
 
-      await updateDoc(userRef, {
-        tradeCount: newTradeCount,
-        netProfit: newNetProfit,
-        unpaidProfitShare,
-        isServicePaused,
-      });
+      await supabase
+        .from('users')
+        .update({
+          trade_count: newTradeCount,
+          net_profit: newNetProfit,
+          unpaid_profit_share: unpaidProfitShare,
+          is_service_paused: isServicePaused,
+        })
+        .eq('user_id', userId);
     }
   },
 
   async processPayment(userId: string, amount: number, method: string, transactionId: string) {
-    const userRef = doc(db, 'users', userId);
-    
     // Record payment
-    await addDoc(collection(db, 'payments'), {
-      userId,
+    const { error: paymentError } = await supabase.from('payments').insert([{
+      user_id: userId,
       amount,
       method,
       status: 'COMPLETED',
       timestamp: new Date().toISOString(),
       transactionId,
-    });
+    }]);
+
+    if (paymentError) throw paymentError;
 
     // Reset billing status
-    await updateDoc(userRef, {
-      unpaidProfitShare: 0,
-      isServicePaused: false,
-      lastPaymentDate: new Date().toISOString(),
-    });
+    await supabase
+      .from('users')
+      .update({
+        unpaid_profit_share: 0,
+        is_service_paused: false,
+        last_payment_date: new Date().toISOString(),
+      })
+      .eq('user_id', userId);
   }
 };
+

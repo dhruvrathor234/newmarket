@@ -1,8 +1,7 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { Symbol, TradeType, MarketAnalysis, Candle } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" });
 
 export const aiIntelligenceService = {
   analyzeMarket: async (
@@ -11,8 +10,8 @@ export const aiIntelligenceService = {
     timeframe: string
   ): Promise<MarketAnalysis | null> => {
     try {
-      if (!process.env.GEMINI_API_KEY) {
-        console.warn("GEMINI_API_KEY not found");
+      if (!import.meta.env.VITE_GEMINI_API_KEY) {
+        console.warn("VITE_GEMINI_API_KEY not found");
         return null;
       }
 
@@ -68,7 +67,7 @@ export const aiIntelligenceService = {
       });
 
       const result = JSON.parse(response.text || "{}");
-      
+
       return {
         symbol,
         timestamp: Date.now(),
@@ -100,8 +99,8 @@ export const aiIntelligenceService = {
     if (!analysis || analysis.decision === 'HOLD') return [];
 
     const markers: any[] = [];
-    const entryPrice = analysis.suggestedSL && analysis.customParams?.takeProfit 
-      ? (analysis.suggestedSL + analysis.customParams.takeProfit) / 2 
+    const entryPrice = analysis.suggestedSL && analysis.customParams?.takeProfit
+      ? (analysis.suggestedSL + analysis.customParams.takeProfit) / 2
       : Date.now(); // Placeholder if no price
 
     // Entry Marker

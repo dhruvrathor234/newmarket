@@ -1,7 +1,7 @@
+
 import React, { useState } from 'react';
 import { UserStats } from '../types';
-import { db } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wallet, TrendingUp, AlertCircle, CheckCircle, CreditCard, ArrowRight } from 'lucide-react';
 
@@ -20,15 +20,19 @@ const NebulaFeeDashboard: React.FC<NebulaFeeDashboardProps> = ({ stats, onPaySuc
       // Simulate payment gateway delay
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      const statsRef = doc(db, 'user_stats', stats.userId);
       const newTotalPaid = stats.totalFeesPaid + stats.amountOwed;
       
-      await updateDoc(statsRef, {
-        totalFeesPaid: newTotalPaid,
-        amountOwed: 0,
-        isLocked: false,
-        lastUpdated: Date.now()
-      });
+      const { error } = await supabase
+        .from('user_stats')
+        .update({
+          total_fees_paid: newTotalPaid,
+          amount_owed: 0,
+          is_locked: false,
+          last_updated: Date.now()
+        })
+        .eq('user_id', stats.userId);
+
+      if (error) throw error;
 
       setShowSuccess(true);
       onPaySuccess();

@@ -1,6 +1,42 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://iumcvlwheadkrcxkaymi.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml1bWN2bHdoZWFka3JjeGtheW1pIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5ODQzMTQsImV4cCI6MjA4ODU2MDMxNH0.NZxpqsm-GHn5mZXHXzNsHRScjkaiqnAvZmEwgQeCRFY';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Custom cookie storage implementation for Supabase
+const cookieStorage = {
+  getItem: (key: string) => {
+    if (typeof document === 'undefined') return null;
+    const name = key + "=";
+    const decodedCookie = decodeURIComponent(document.cookie);
+    const ca = decodedCookie.split(';');
+    for (let i = 0; i < ca.length; i++) {
+      let c = ca[i];
+      while (c.charAt(0) === ' ') c = c.substring(1);
+      if (c.indexOf(name) === 0) return c.substring(name.length, c.length);
+    }
+    return null;
+  },
+  setItem: (key: string, value: string) => {
+    if (typeof document === 'undefined') return;
+    // Set cookie with 30 day expiration, Secure and SameSite=Lax
+    const date = new Date();
+    date.setTime(date.getTime() + (30 * 24 * 60 * 60 * 1000));
+    const expires = "; expires=" + date.toUTCString();
+    document.cookie = `${key}=${value}${expires}; path=/; SameSite=Lax; Secure`;
+  },
+  removeItem: (key: string) => {
+    if (typeof document === 'undefined') return;
+    document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+  }
+};
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    storage: cookieStorage,
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce'
+  }
+});
