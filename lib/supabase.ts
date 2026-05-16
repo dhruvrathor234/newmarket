@@ -27,7 +27,42 @@ const cookieStorage = {
   },
   removeItem: (key: string) => {
     if (typeof document === 'undefined') return;
-    document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+    // Removing cookie with the same attributes it was set with
+    document.cookie = `${key}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax; Secure`;
+  }
+};
+
+// Helper to manually clear all Supabase related cookies
+export const clearSupabaseCookies = () => {
+  if (typeof document === 'undefined') return;
+  const cookies = document.cookie.split(";");
+
+  for (let i = 0; i < cookies.length; i++) {
+    const cookie = cookies[i];
+    const eqPos = cookie.indexOf("=");
+    const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+    
+    // Supabase default cookie prefix is 'sb-', but also check for other variants
+    if (name.startsWith('sb-') || name.includes('supabase')) {
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/; SameSite=Lax; Secure`;
+      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+    }
+  }
+
+  // Clear all storage related to Supabase
+  try {
+    Object.keys(localStorage).forEach(key => {
+      if (key.startsWith('sb-') || key.includes('supabase')) {
+        localStorage.removeItem(key);
+      }
+    });
+    Object.keys(sessionStorage).forEach(key => {
+      if (key.startsWith('sb-') || key.includes('supabase')) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  } catch (e) {
+    console.error("Storage clearing failed:", e);
   }
 };
 

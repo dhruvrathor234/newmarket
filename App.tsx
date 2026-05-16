@@ -13,7 +13,7 @@ import AssistantView from './components/views/AssistantView';
 import ProfileView from './components/views/ProfileView';
 import SubscriptionModal from './components/SubscriptionModal';
 
-import { BotState, Trade, TradeType, RiskSettings, Symbol, View, MarketDetails, Alert, NebulaV5Settings, MarketAnalysis, AccountType, TradingMode, HedgingBotSettings, HFTBotSettings, UserStats, Candle, Transaction } from './types';
+import { BotState, Trade, TradeType, RiskSettings, Symbol, View, MarketDetails, Alert, NebulaV5Settings, MarketAnalysis, AccountType, TradingMode, HedgingBotSettings, HFTBotSettings, UserStats, Candle, Transaction, BotStrategy } from './types';
 import { INITIAL_BALANCE, ASSETS, CRON_INTERVAL_MS } from './constants';
 import { getMarketDetails, fetchCandles, initializePriceService } from './services/priceService';
 import { analyzeNebulaV5 } from './services/nebulaV5Service';
@@ -21,7 +21,7 @@ import { analyzeHFTBot, calculateHFTLotSize } from './services/hftBotService';
 import { analyzeMarket, evaluateCustomLogic } from './services/geminiService';
 import { aiIntelligenceService } from './services/aiIntelligenceService';
 
-import { supabase } from './lib/supabase';
+import { supabase, clearSupabaseCookies } from './lib/supabase';
 import { binanceService } from './services/binanceService';
 import { databaseService } from './services/databaseService';
 import { billingService } from './services/billingService';
@@ -552,10 +552,15 @@ const App: React.FC = () => {
   const handleLogout = async () => {
     try {
       await supabase.auth.signOut();
-      setCurrentView('DASHBOARD');
-      addLog("Signed out from Nebulamarket protocol.", "info");
+      addLog("Signed out from Supabase auth.", "info");
     } catch (error) {
-      addLog("Sign out failed: Link unstable.", "error");
+      console.error("Sign out error:", error);
+    } finally {
+      clearSupabaseCookies();
+      setCurrentView('DASHBOARD');
+      addLog("Local session cleared. Protocol reset.", "success");
+      // Hard refresh to ensure all states and listeners are cleared
+      window.location.href = '/'; 
     }
   };
 
