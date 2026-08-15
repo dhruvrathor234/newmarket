@@ -75,7 +75,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
         method: 'POST',
         body: JSON.stringify({ planName: selectedPlan.name, amountInr: selectedPlan.price, billingCycle: selectedPlan.cycle }),
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => ({ error: `Server error (${response.status}). Please verify server configuration.` }));
       if (!response.ok) throw new Error(data.error || 'Order creation failed.');
 
       // 2. Open the Cashfree hosted checkout (sandbox test mode) in a popup.
@@ -93,7 +93,8 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({ isOpen, onClose, 
           method: 'POST',
           body: JSON.stringify({ orderId: data.orderId, planName: selectedPlan.name }),
         });
-        const status = await statusRes.json();
+        const status = await statusRes.json().catch(() => ({ error: `Server error (${statusRes.status})` }));
+        if (!statusRes.ok) throw new Error(status.error || 'Order status check failed.');
 
         if (status.orderStatus === 'PAID') {
           setStep('SUCCESS');
