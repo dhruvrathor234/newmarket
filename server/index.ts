@@ -1,49 +1,24 @@
 import express from 'express';
 import path from 'path';
-import { createServer as createViteServer } from 'vite';
-import { NODE_ENV, IS_VERCEL, GEMINI_API_KEY, isPlaceholder } from './config';
-import aiRouter from './routes/ai';
-import binanceRouter from './routes/binance';
-import paymentsRouter from './routes/payments';
+import { app } from './app';
+import { NODE_ENV, IS_VERCEL } from './config';
 
-export const app = express();
-
-app.use(express.json({ limit: '10mb' }));
-
-// --- HEALTH CHECK (public, no sensitive details) ---
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    ai: { online: !!GEMINI_API_KEY && !isPlaceholder(GEMINI_API_KEY) },
-    env: NODE_ENV,
-    vercel: IS_VERCEL,
-  });
+// --- STATIC SERVING (production only; local dev uses the Vite middleware in server/dev.ts) ---
+const distPath = path.join(process.cwd(), 'dist');
+app.use(express.static(distPath));
+// Express 5 compatible SPA fallback (bare '*' routes are no longer valid)
+app.get('/*splat', (_req, res) => {
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
-// --- API ROUTES (all authenticated + rate limited inside each router) ---
-app.use('/api/ai', aiRouter);
-app.use('/api/binance', binanceRouter);
-app.use('/api/payments', paymentsRouter);
-
-// --- VITE / STATIC SERVING ---
-async function setupVite() {
-  if (NODE_ENV !== 'production' && !IS_VERCEL) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    // Express 5 compatible SPA fallback (bare '*' routes are no longer valid)
-    app.get('/*splat', (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
-}
-
-setupVite();
+// --- GLOBAL ERROR HANDLER ---
+// Never let an unexpected error crash the function on Vercel: respond with a
+// clean JSON 500 so the client (and Vercel logs) show the real message instead
+// of a generic FUNCTION_INVOCATION_FAILED.
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('[Server Error]', err);
+  res.status(500).json({ error: err?.message || 'Internal server error.' });
+});
 
 if (NODE_ENV !== 'production' || !IS_VERCEL) {
   const PORT = 3000;

@@ -33,6 +33,10 @@ export const PAYMENT_ETH_ADDRESS = (
 // --- Cashfree Payment Gateway (SERVER-ONLY — the secret must never ship to the browser) ---
 export const CASHFREE_API_KEY = process.env.CASHFREE_API_KEY || '';
 export const CASHFREE_SECRET_KEY = process.env.CASHFREE_SECRET_KEY || '';
+
+if (!CASHFREE_API_KEY || !CASHFREE_SECRET_KEY) {
+  console.warn('[Cashfree] API keys are NOT set. Payment order creation will be unavailable. Set CASHFREE_API_KEY and CASHFREE_SECRET_KEY in the server environment (Vercel dashboard).');
+}
 export const CASHFREE_ENV = (process.env.CASHFREE_ENV || 'sandbox').toLowerCase();
 export const CASHFREE_API_VERSION = process.env.CASHFREE_API_VERSION || '2025-01-01';
 export const CASHFREE_BASE_URL =

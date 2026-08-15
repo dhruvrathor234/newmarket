@@ -86,6 +86,18 @@ export const useCloudSync = (deps: CloudSyncDeps) => {
   };
 
   const lastUidRef = useRef<string | null>(null);
+  // One realtime channel per user. The auth listener fires repeatedly
+  // (INITIAL_SESSION, SIGNED_IN, TOKEN_REFRESHED) and supabase-js re-uses a
+  // channel with the same topic — adding .on() to an already-subscribed channel
+  // throws "cannot add postgres_changes callbacks after subscribe()".
+  const statsChannelRef = useRef<{ uid: string; channel: ReturnType<typeof supabase.channel> } | null>(null);
+
+  const removeStatsChannel = () => {
+    if (statsChannelRef.current) {
+      supabase.removeChannel(statsChannelRef.current.channel);
+      statsChannelRef.current = null;
+    }
+  };
 
   // --- AUTH STATE LISTENER ---
   useEffect(() => {
@@ -96,78 +108,80 @@ export const useCloudSync = (deps: CloudSyncDeps) => {
         if (lastUidRef.current && lastUidRef.current !== supabaseUser.id) {
           resetState();
           setIsInitialLoad(true);
+          removeStatsChannel(); // switch the realtime channel to the new user
         }
         lastUidRef.current = supabaseUser.id;
         setUser({ email: supabaseUser.email || '' });
         initializePriceService(); // Start services only after login
 
-        try {
-          // Fetch or Initialize User Stats from Supabase
-          const { data: stats } = await supabase
-            .from('user_stats')
-            .select('*')
-            .eq('user_id', supabaseUser.id)
-            .single();
+        // Fetch stats + attach the realtime channel only once per user — the
+        // auth callback fires on every session event and must be idempotent.
+        if (!statsChannelRef.current) {
+          try {
+            // Fetch or Initialize User Stats from Supabase
+            const { data: stats } = await supabase
+              .from('user_stats')
+              .select('*')
+              .eq('user_id', supabaseUser.id)
+              .single();
 
-          if (stats) {
-            setUserStats({
-              userId: stats.user_id,
-              totalProfit: stats.total_profit,
-              totalFeesOwed: stats.total_fees_owed,
-              totalFeesPaid: stats.total_fees_paid,
-              amountOwed: stats.amount_owed,
-              isLocked: stats.is_locked,
-              lastUpdated: stats.last_updated,
-            });
-          } else {
-            const initialStats: UserStats = {
-              userId: supabaseUser.id,
-              totalProfit: 0,
-              totalFeesOwed: 0,
-              totalFeesPaid: 0,
-              amountOwed: 0,
-              isLocked: false,
-              lastUpdated: Date.now(),
-            };
-            await supabase.from('user_stats').insert([{
-              user_id: initialStats.userId,
-              total_profit: initialStats.totalProfit,
-              total_fees_owed: initialStats.totalFeesOwed,
-              total_fees_paid: initialStats.totalFeesPaid,
-              amount_owed: initialStats.amountOwed,
-              is_locked: initialStats.isLocked,
-              last_updated: initialStats.lastUpdated,
-            }]);
-            setUserStats(initialStats);
-          }
-
-          // Real-time subscription to user stats
-          const channel = supabase
-            .channel(`user_stats:${supabaseUser.id}`)
-            .on('postgres_changes', {
-              event: 'UPDATE',
-              schema: 'public',
-              table: 'user_stats',
-              filter: `user_id=eq.${supabaseUser.id}`,
-            }, payload => {
-              const data = payload.new;
+            if (stats) {
               setUserStats({
-                userId: data.user_id,
-                totalProfit: data.total_profit,
-                totalFeesOwed: data.total_fees_owed,
-                totalFeesPaid: data.total_fees_paid,
-                amountOwed: data.amount_owed,
-                isLocked: data.is_locked,
-                lastUpdated: data.last_updated,
+                userId: stats.user_id,
+                totalProfit: stats.total_profit,
+                totalFeesOwed: stats.total_fees_owed,
+                totalFeesPaid: stats.total_fees_paid,
+                amountOwed: stats.amount_owed,
+                isLocked: stats.is_locked,
+                lastUpdated: stats.last_updated,
               });
-            })
-            .subscribe();
+            } else {
+              const initialStats: UserStats = {
+                userId: supabaseUser.id,
+                totalProfit: 0,
+                totalFeesOwed: 0,
+                totalFeesPaid: 0,
+                amountOwed: 0,
+                isLocked: false,
+                lastUpdated: Date.now(),
+              };
+              await supabase.from('user_stats').insert([{
+                user_id: initialStats.userId,
+                total_profit: initialStats.totalProfit,
+                total_fees_owed: initialStats.totalFeesOwed,
+                total_fees_paid: initialStats.totalFeesPaid,
+                amount_owed: initialStats.amountOwed,
+                is_locked: initialStats.isLocked,
+                last_updated: initialStats.lastUpdated,
+              }]);
+              setUserStats(initialStats);
+            }
 
-          return () => {
-            supabase.removeChannel(channel);
-          };
-        } catch (error: any) {
-          console.error('Supabase Initialization Error:', error);
+            // Real-time subscription to user stats
+            const channel = supabase
+              .channel(`user_stats:${supabaseUser.id}`)
+              .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'user_stats',
+                filter: `user_id=eq.${supabaseUser.id}`,
+              }, payload => {
+                const data = payload.new;
+                setUserStats({
+                  userId: data.user_id,
+                  totalProfit: data.total_profit,
+                  totalFeesOwed: data.total_fees_owed,
+                  totalFeesPaid: data.total_fees_paid,
+                  amountOwed: data.amount_owed,
+                  isLocked: data.is_locked,
+                  lastUpdated: data.last_updated,
+                });
+              })
+              .subscribe();
+            statsChannelRef.current = { uid: supabaseUser.id, channel };
+          } catch (error: any) {
+            console.error('Supabase Initialization Error:', error);
+          }
         }
 
         if (requestedViewRef.current) {
@@ -175,6 +189,7 @@ export const useCloudSync = (deps: CloudSyncDeps) => {
           requestedViewRef.current = null;
         }
       } else {
+        removeStatsChannel();
         setUser(null);
         setUserStats(null);
         resetState();
@@ -184,6 +199,7 @@ export const useCloudSync = (deps: CloudSyncDeps) => {
 
     return () => {
       subscription.unsubscribe();
+      removeStatsChannel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

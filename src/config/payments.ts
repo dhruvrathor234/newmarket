@@ -10,9 +10,11 @@ export const PAYMENT_CONFIG = {
 } as const;
 
 // Cashfree Payment Gateway client settings.
-// MODE: 'sandbox' for the test net, 'production' for live. The API keys live
-// server-side (env) — the client only ever holds the payment_session_id.
+// MODE: 'sandbox' for the test net, 'production' for live. Override with
+// VITE_CASHFREE_MODE so going live needs no code change (set the matching
+// CASHFREE_ENV=production on the server too). The API keys live server-side
+// (env) — the client only ever holds the payment_session_id.
 export const CASHFREE_CONFIG = {
-  MODE: 'sandbox',
+  MODE: (import.meta.env.VITE_CASHFREE_MODE || 'sandbox') as 'sandbox' | 'production',
   SDK_URL: 'https://sdk.cashfree.com/js/v3/cashfree.js',
 } as const;
