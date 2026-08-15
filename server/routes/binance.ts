@@ -1,13 +1,10 @@
 import { Router } from 'express';
-import BinanceFactory from 'binance-api-node';
+import crypto from 'crypto';
 import { requireAuth, rateLimit } from '../middleware';
 
 const router = Router();
 
 router.use(requireAuth, rateLimit({ windowMs: 60_000, max: 60 }));
-
-// Fix for ESM default import issues with binance-api-node
-const Binance = (BinanceFactory as any).default || BinanceFactory;
 
 const VALID_SIDES = ['BUY', 'SELL'];
 const VALID_TYPES = ['MARKET', 'LIMIT'];
@@ -15,6 +12,48 @@ const VALID_MODES = ['SPOT', 'FUTURES', 'MARGIN'];
 
 const isCredential = (v: unknown, maxLen: number) =>
   typeof v === 'string' && v.trim().length > 0 && v.trim().length <= maxLen;
+
+const signQuery = (queryString: string, secret: string): string => {
+  return crypto.createHmac('sha256', secret).update(queryString).digest('hex');
+};
+
+const binanceRequest = async (baseUrl: string, endpoint: string, apiKey: string, apiSecret: string, method = 'GET', params: Record<string, string | number> = {}) => {
+  const timestamp = Date.now();
+  const queryParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null) {
+      queryParams.append(key, String(value));
+    }
+  }
+  queryParams.append('timestamp', String(timestamp));
+  queryParams.append('recvWindow', '60000');
+
+  const queryString = queryParams.toString();
+  const signature = signQuery(queryString, apiSecret);
+  const fullQuery = `${queryString}&signature=${signature}`;
+
+  let url = `${baseUrl}${endpoint}`;
+  const options: RequestInit = {
+    method,
+    headers: {
+      'X-MBX-APIKEY': apiKey,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  };
+
+  if (method === 'GET') {
+    url += `?${fullQuery}`;
+  } else {
+    options.body = fullQuery;
+  }
+
+  const response = await fetch(url, options);
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data?.msg || `Binance API error (${response.status})`);
+  }
+  return data;
+};
 
 router.post('/balance', async (req, res) => {
   const { apiKey, apiSecret, tradingMode } = req.body || {};
@@ -30,15 +69,8 @@ router.post('/balance', async (req, res) => {
   const trimmedSecret = apiSecret.trim();
 
   try {
-    const client = Binance({
-      apiKey: trimmedKey,
-      apiSecret: trimmedSecret,
-      useServerTime: true,
-      recvWindow: 60000,
-    });
-
     if (tradingMode === 'FUTURES') {
-      const accountInfo = await client.futuresAccountInfo();
+      const accountInfo = await binanceRequest('https://fapi.binance.com', '/fapi/v2/account', trimmedKey, trimmedSecret);
 
       if (!accountInfo || !accountInfo.assets) {
         return res.status(500).json({ error: 'Invalid response from Binance Futures API' });
@@ -63,10 +95,20 @@ router.post('/balance', async (req, res) => {
 
       res.json(responseData);
     } else {
-      const [accountInfo, allPrices] = await Promise.all([client.accountInfo(), client.prices()]);
+      const [accountInfo, priceList] = await Promise.all([
+        binanceRequest('https://api.binance.com', '/api/v3/account', trimmedKey, trimmedSecret),
+        fetch('https://api.binance.com/api/v3/ticker/price').then(r => r.json()).catch(() => []),
+      ]);
 
       if (!accountInfo || !accountInfo.balances) {
         return res.status(500).json({ error: 'Invalid response from Binance Spot API' });
+      }
+
+      const priceMap: Record<string, string> = {};
+      if (Array.isArray(priceList)) {
+        for (const item of priceList) {
+          if (item.symbol && item.price) priceMap[item.symbol] = item.price;
+        }
       }
 
       const nonZero = accountInfo.balances.filter((b: any) => parseFloat(b.free) > 0 || parseFloat(b.locked) > 0);
@@ -79,7 +121,7 @@ router.post('/balance', async (req, res) => {
         if (stablecoins.includes(b.asset)) {
           totalEstUSDT += amount;
         } else {
-          const price = allPrices[`${b.asset}USDT`];
+          const price = priceMap[`${b.asset}USDT`];
           if (price) totalEstUSDT += amount * parseFloat(price);
         }
       });
@@ -124,27 +166,30 @@ router.post('/order', async (req, res) => {
   }
 
   try {
-    const client = Binance({ apiKey: apiKey.trim(), apiSecret: apiSecret.trim(), useServerTime: true });
     const orderType = type || 'MARKET';
+    const trimmedKey = apiKey.trim();
+    const trimmedSecret = apiSecret.trim();
 
     if (tradingMode === 'FUTURES') {
       if (leverage) {
-        try { await client.futuresLeverage({ symbol, leverage }); } catch (e) { /* non-fatal */ }
+        try {
+          await binanceRequest('https://fapi.binance.com', '/fapi/v1/leverage', trimmedKey, trimmedSecret, 'POST', { symbol, leverage });
+        } catch { /* non-fatal */ }
       }
-      const orderOptions: any = { symbol, side, quantity, type: orderType };
+      const orderOptions: Record<string, any> = { symbol, side, quantity, type: orderType };
       if (orderType === 'LIMIT' && price) {
         orderOptions.price = price;
         orderOptions.timeInForce = 'GTC';
       }
-      const order = await client.futuresOrder(orderOptions);
+      const order = await binanceRequest('https://fapi.binance.com', '/fapi/v1/order', trimmedKey, trimmedSecret, 'POST', orderOptions);
       res.json(order);
     } else {
-      const orderOptions: any = { symbol, side, quantity, type: orderType };
+      const orderOptions: Record<string, any> = { symbol, side, quantity, type: orderType };
       if (orderType === 'LIMIT' && price) {
         orderOptions.price = price;
         orderOptions.timeInForce = 'GTC';
       }
-      const order = await client.order(orderOptions);
+      const order = await binanceRequest('https://api.binance.com', '/api/v3/order', trimmedKey, trimmedSecret, 'POST', orderOptions);
       res.json(order);
     }
   } catch (error: any) {
