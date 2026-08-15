@@ -4,31 +4,31 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
+    "dev": "tsx server/index.ts",
     "build": "vite build",
     "lint": "tsc --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
     "@google/genai": "^1.52.0",
-    "@supabase/supabase-js": "^2.105.4",
-    "binance-api-node": "^0.13.9",
+    "@supabase/supabase-js": "^2.112.3",
+    "binance-api-node": "^0.13.10",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "framer-motion": "^12.38.0",
+    "framer-motion": "^12.43.0",
     "jspdf": "^4.2.1",
-    "jspdf-autotable": "^5.0.7",
+    "jspdf-autotable": "^5.0.8",
     "lightweight-charts": "4.1.1",
     "lucide-react": "^0.554.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "recharts": "^3.8.1",
-    "tsx": "^4.21.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1",
+    "tsx": "^4.23.12"
   },
   "devDependencies": {
-    "@types/node": "^22.19.18",
+    "@types/node": "^22.20.1",
     "@vitejs/plugin-react": "^5.2.0",
     "typescript": "~5.8.3",
-    "vite": "^6.4.2"
+    "vite": "^6.4.3"
   }
 }
